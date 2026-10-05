@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: bank-migrate
+  main:
+    web-application-type: none
