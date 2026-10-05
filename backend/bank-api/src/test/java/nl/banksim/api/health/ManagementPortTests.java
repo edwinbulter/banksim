@@ -11,6 +11,7 @@ import org.springframework.web.client.RestClient;
 /** De kubelet-probes moeten zonder token en zonder clientcertificaat bij de health-endpoints kunnen. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "server.ssl.enabled=false",
+        "banksim.cursor-sleutel=test-sleutel-van-minstens-32-tekens!!",
         "spring.ssl.bundle.pem.server.keystore.certificate=",
         "spring.ssl.bundle.pem.server.keystore.private-key=",
         "spring.ssl.bundle.pem.server.truststore.certificate=",

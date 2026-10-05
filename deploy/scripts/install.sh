@@ -124,6 +124,7 @@ create_random_secrets() {
   ensure_secret_keys banksim-postgres superuser-password
   ensure_secret_keys banksim-keycloak admin-password bff-client-secret datagen-client-secret \
     klant-password beheerder-password
+  ensure_secret_keys banksim-api cursor-sleutel
   ok "Secrets aanwezig (bestaande waarden blijven ongewijzigd)"
 }
 
@@ -196,6 +197,9 @@ smoke_login() {
     body="$(curl -s --cacert "$CERT_DIR/ca.crt" -b "$jar" "https://bank.localtest.me/api/me")"
     [[ "$body" == *'"naam":"Jan de Vries"'* ]] || fail "Login: /api/me gaf bij poging $i: ${body:-(leeg/redirect)}"
   done
+  body="$(curl -s --cacert "$CERT_DIR/ca.crt" -b "$jar" "https://bank.localtest.me/api/me/accounts")"
+  [[ "$body" == *'"soort":"BETAAL"'* && "$body" == *'"soort":"SPAAR"'* ]] \
+    || fail "Login: /api/me/accounts gaf ${body:-(leeg)}"
   ok "Login via Keycloak en /api/me werken op alle BFF-replica's"
 }
 

@@ -304,6 +304,14 @@ final class Huishouden {
                 "Betaalpas " + dag.getDayOfMonth() + "-" + dag.getMonthValue());
     }
 
+    /**
+     * Minimum op de betaalrekening in de gegenereerde data: ongeveer een kwart van het maandinkomen. Zo heeft
+     * een gebruiker die later zelf betaalt nog ruimte, ook tegenover al gegenereerde toekomstige boekingen.
+     */
+    Money minimumSaldo() {
+        return maal(inkomen(), new BigDecimal("0.25"));
+    }
+
     /** Netto maandinkomen inclusief AOW, in prijzen van 2021. */
     private Money inkomen() {
         return profiel.aow() == null ? profiel.netto() : profiel.netto().plus(profiel.aow());

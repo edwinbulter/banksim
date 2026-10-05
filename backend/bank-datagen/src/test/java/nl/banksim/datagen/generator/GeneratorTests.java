@@ -37,7 +37,7 @@ class GeneratorTests {
      * Golden master (TO §13): verandert de generator, dan verandert deze waarde. Alleen bewust aanpassen,
      * na controle dat de nieuwe data klopt.
      */
-    static final String GOLDEN_MASTER = "a8567f4a99c9680f";
+    static final String GOLDEN_MASTER = "e25012ed05e8a3b9";
 
     static Dataset data;
 
@@ -81,6 +81,23 @@ class GeneratorTests {
                 }
             });
         });
+    }
+
+    @Test
+    void betaalrekeningHoudtEenBufferVoorEigenBetalingen() {
+        for (Profiel p : Profielen.ALLE) {
+            Huishouden h = new Huishouden(p, 42);
+            Iban betaal = Huishouden.betaalIban(p);
+            Money saldo = p.startBetaal();
+            Map<LocalDate, Money> perDag = new TreeMap<>();
+            data.overboekingen().stream().flatMap(o -> o.boekingen().stream())
+                    .filter(b -> b.rekening().equals(betaal))
+                    .forEach(b -> perDag.merge(b.boekdatum(), b.bedrag(), Money::plus));
+            for (Map.Entry<LocalDate, Money> dag : perDag.entrySet()) {
+                saldo = saldo.plus(dag.getValue());
+                assertThat(saldo).as("%s op %s", p.naam(), dag.getKey()).isGreaterThanOrEqualTo(h.minimumSaldo());
+            }
+        }
     }
 
     @Test

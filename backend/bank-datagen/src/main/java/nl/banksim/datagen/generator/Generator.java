@@ -125,14 +125,15 @@ public final class Generator {
             }
         }
         if (soort.get(van).magNietRoodStaan()) {
-            Money nodig = g.bedrag().plus(g.buffer());
+            boolean vanBetaal = van.equals(gepland.eigenaar().betaal().iban());
+            Money minimum = vanBetaal ? gepland.eigenaar().minimumSaldo() : Money.ZERO;
+            Money nodig = g.bedrag().plus(g.buffer().isGreaterThan(minimum) ? g.buffer() : minimum);
             Money tekort = nodig.minus(saldo.get(van));
             if (tekort.isPositive()) {
                 // Net als in het echt: bij een tekort eerst geld van de spaarrekening halen, behalve voor
                 // optionele bewegingen met een buffer (sparen, vakantie boeken).
                 boolean optioneel = g.buffer().isPositive();
-                boolean vanBetaalrekening = van.equals(gepland.eigenaar().betaal().iban());
-                if (optioneel || !vanBetaalrekening || !haalVanSpaarrekening(dag, gepland, tekort)) {
+                if (optioneel || !vanBetaal || !haalVanSpaarrekening(dag, gepland, tekort)) {
                     overgeslagen++;
                     return;
                 }

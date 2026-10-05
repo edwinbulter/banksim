@@ -42,6 +42,16 @@ spec:
               value: https://{{ .Values.hosts.auth }}
             - name: BANKSIM_KEYCLOAK_INTERNAL_URL
               value: https://keycloak.{{ .Release.Namespace }}.svc:8443
+            - name: BANKSIM_DB_HOST
+              value: postgres.{{ .Release.Namespace }}.svc
+            - name: BANKSIM_CURSOR_SLEUTEL
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-api
+                  key: cursor-sleutel
+            # Gestructureerde JSON-logs met correlation-id (TO §11, A09)
+            - name: LOGGING_STRUCTURED_FORMAT_CONSOLE
+              value: ecs
           ports:
             - name: https
               containerPort: 8443

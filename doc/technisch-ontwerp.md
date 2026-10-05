@@ -9,7 +9,7 @@ Dit document beschrijft hoe het [functioneel ontwerp](functioneel-ontwerp.md) (F
 | Laag | Keuze | Versie |
 | --- | --- | --- |
 | Taal backend | Java | 21 (LTS) |
-| Backend framework | Spring Boot, Spring Security, Spring Data JPA, Spring Modulith | Actuele stabiele 4.x bij implementatie |
+| Backend framework | Spring Boot, Spring Security, Spring JDBC (`JdbcClient`), Spring Modulith | 4.0.x (Spring Cloud 2025.1 ondersteunt 4.1 nog niet) |
 | BFF / gateway | Spring Cloud Gateway (Server WebMVC) + Spring Security OAuth2 Client | Spring Cloud release-train passend bij Boot 4.x |
 | Resilience | Resilience4j (+ `@Retryable`/`@ConcurrencyLimit` uit Spring Framework 7) | Actueel |
 | Identiteit | Keycloak (officiële image als Deployment in `banksim`, realm-import bij start) | Actuele stabiele, minimaal 26 |
@@ -102,7 +102,7 @@ banksim/
 
 ### 3.1 Modules
 
-Package-by-feature; Spring Modulith bewaakt in een test dat modules alleen via hun publieke API met elkaar praten.
+Package-by-feature; Spring Modulith bewaakt in een test dat modules alleen via hun publieke API met elkaar praten. Databasetoegang gaat via `JdbcClient` met expliciete SQL in plaats van JPA: saldo op een datum, keyset-paginering en de controle op het laagste toekomstige saldo zijn zo direct en controleerbaar. De rentecorrectie hangt via het event `OverboekingGeboekt` aan het grootboek, zodat `ledger` niet van `savings` afhangt.
 
 | Module | Inhoud |
 | --- | --- |
@@ -244,7 +244,7 @@ public record Money(BigDecimal amount) implements Comparable<Money> {
 | --- | --- |
 | Domein | `Money` (scale 2, `HALF_EVEN`); vergelijken met `compareTo`, nooit `equals` op `BigDecimal` |
 | Rente | Tussenresultaten op scale 10 met `MathContext.DECIMAL128`; pas bij het boeken afronden naar scale 2 |
-| Database | `NUMERIC(19,2)`; Hibernate-mapping op `BigDecimal` |
+| Database | `NUMERIC(19,2)`; via `JdbcClient` direct als `BigDecimal` gelezen en geschreven |
 | JSON | Jackson schrijft/leest bedragen als string (`"-63.48"`); invoer met meer dan 2 decimalen → 400 |
 | Frontend | Bedragen blijven strings of `Big` (`big.js`); invoer met komma wordt genormaliseerd; weergave als `1.842,17` via een eigen `MoneyPipe` op basis van `Big`, niet via `Number` |
 | Bewaking | ArchUnit-regel: geen velden, parameters of returntypes `double`/`float`/`Double`/`Float` in `..domain..`, `..ledger..`, `..payment..`, `..savings..`; ESLint-regel in de frontend die `parseFloat`/`Number()` in `money/` verbiedt |
@@ -330,6 +330,7 @@ Regels:
 - **Deterministisch**: vaste seed → steeds dezelfde data. Dit is ook de basis voor de e2e-tests.
 - Maakt de 10 huishoudens met profielen en het transactiepatroon uit het FO, plus de bedrijven met geldige NL-IBAN's (mod-97-checksum, fictieve bankcode `SIMB`). Alle IBAN's die betaalbaar zijn komen in `contact`.
 - Boekt in memory via dezelfde `bank-domain`-regels als `LedgerService`: double-entry, nooit rood (bij een tekort eerst een opname van de spaarrekening of een niet-vaste uitgave overslaan), maandelijkse rente.
+- Houdt op elke betaalrekening een buffer van ongeveer een kwart maandinkomen aan. Omdat de data tot eind 2026 doorloopt, telt de regel "nooit rood" ook de al gegenereerde toekomstige boekingen mee; zonder buffer zou een klant vrijwel niets meer kunnen betalen.
 - Maakt via de Keycloak Admin API (service-account-client `bank-datagen` met alleen `manage-users`, `view-users` en `view-realm`) 10 klanten en de beheerder aan, idempotent zodat hun Keycloak-id gelijk blijft; wachtwoorden komen uit een Kubernetes Secret dat bij installatie wordt gegenereerd, niet uit Git.
 - Controleert aan het eind in de database de invarianten (som van alle boekingen = 0, geen dag met een negatief betaal- of spaarsaldo). Een golden-master-test legt een checksum van de eindsaldi en het aantal overboekingen vast (seed 42: ruim 30.000 overboekingen).
 - Rekent net als het domein nooit met floating point: bedragen worden in centen getrokken (ArchUnit-regel).
@@ -406,7 +407,7 @@ BFF en API valideren de issuer tegen de publieke URL `https://auth.localtest.me/
 | **A02 Security Misconfiguration** | Actuator alleen `health` op aparte management-poort, niet via de ingress; geen standaardwachtwoorden (Secrets gegenereerd); security headers; containers non-root, `readOnlyRootFilesystem`, `drop: [ALL]`, `seccompProfile: RuntimeDefault`; foutmeldingen zonder stacktraces; Keycloak-admin-console en `/admin` niet via de ingress bereikbaar (alleen `/realms/banksim` en `/resources`) |
 | **A03 Software Supply Chain Failures** | Versies via Spring Boot BOM en `package-lock.json` (`npm ci`); OWASP Dependency-Check en `npm audit` in CI met drempel; CycloneDX-SBOM voor backend, frontend en images; Trivy-scan van images; base-images op digest gepind; Renovate voor updates; alleen Maven Central en npmjs |
 | **A04 Cryptographic Failures** | TLS overal (ingress, mTLS tussen alle componenten, PostgreSQL verify-full met certificaat-authenticatie); geen eigen crypto; wachtwoord-hashing door Keycloak (Argon2/PBKDF2); JWT RS256/ES256 met sleutelrotatie in Keycloak; geen gevoelige data in URL's of logs |
-| **A05 Injection** | Alleen geparametriseerde queries (Spring Data JPA, Criteria/Specification voor zoeken, geen string-concatenatie in SQL); Bean Validation op alle invoer (lengtes uit het FO: 70/34/140/25/35); IBAN-checksum; Angular-templates escapen; geen dynamische HTML |
+| **A05 Injection** | Alleen geparametriseerde queries (`JdbcClient`; zoeken bouwt de SQL uit vaste fragmenten, waarden altijd als parameter, `ILIKE` met ge-escapete jokertekens); Bean Validation op alle invoer (lengtes uit het FO: 70/34/140/25/35); IBAN-checksum; Angular-templates escapen; geen dynamische HTML |
 | **A06 Insecure Design** | Threat model (STRIDE) per flow; businessregels alleen server-side (nooit rood, alleen contacten, bedragen > 0); idempotency; transactielimieten en rate limiting (Bucket4j in de BFF met PostgreSQL-backend, dus gedeeld over replicas: login, betalen); double-entry met databaseconstraint als laatste verdedigingslinie |
 | **A07 Authentication Failures** | Keycloak: brute-force-detectie, wachtwoordbeleid, optioneel TOTP-MFA; sessie-id rotatie na login; korte access tokens (5 min) met refresh-token-rotatie; uitloggen trekt ook de Keycloak-sessie in (RP-initiated logout) |
 | **A08 Software or Data Integrity Failures** | JWT-signatuur altijd gevalideerd (geen `alg=none`); geen Java-deserialisatie van onbetrouwbare data; Flyway-checksums; audit log append-only; images bouwen met Jib (reproduceerbaar) en optioneel ondertekenen met cosign |
@@ -451,7 +452,7 @@ Doel: elke toekomstige wijziging die bestaand gedrag breekt, faalt in de build.
 | --- | --- | --- |
 | Unit | JUnit 5, AssertJ | `Money`, IBAN-validatie, renteberekening, validatieregels, mapping |
 | Property-based | jqwik | Geld: `a + b − b = a`, nooit meer dan 2 decimalen; ledger: som van alle saldi blijft gelijk na willekeurige reeksen overboekingen; nooit negatief saldo; rente is monotoon in saldo |
-| Slice | `@WebMvcTest` + `jwt()`, `@DataJpaTest` | Elke endpoint: 401 zonder token, 403 met verkeerde rol, 404 op andermans IBAN, validatiefouten 400/422; repository-queries (keyset, zoeken, saldo op datum) |
+| Slice | MockMvc + `jwt()` tegen een echte PostgreSQL (de applicatie verbindt als `bank_app`) | Elke endpoint: 401 zonder token, 403 met verkeerde rol, 404 op andermans IBAN, validatiefouten 400/422; repository-queries (keyset, zoeken, saldo op datum) |
 | Integratie | Testcontainers (PostgreSQL, Keycloak), `@SpringBootTest` | Volledige flows: betalen, inleggen/opnemen, admin-simulatiedatum; echte JWT's van Keycloak; Flyway-migraties op een lege en een gevulde DB |
 | Concurrency | Testcontainers + `ExecutorService` | 100 gelijktijdige overboekingen kriskras tussen rekeningen: geen deadlocks, geen negatief saldo, totaal ongewijzigd |
 | Idempotency | Integratie | Dezelfde `Idempotency-Key` 2× → 1 boeking; andere inhoud → 422 |

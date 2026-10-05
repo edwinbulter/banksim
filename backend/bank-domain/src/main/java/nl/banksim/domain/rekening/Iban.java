@@ -63,6 +63,11 @@ public record Iban(String value) {
         return sb.toString();
     }
 
+    /** Voor logs: alleen landcode, controlecijfers en de laatste 4 tekens, zoals {@code NL13…0011}. */
+    public String gemaskeerd() {
+        return value.substring(0, 4) + "…" + value.substring(value.length() - 4);
+    }
+
     @Override
     public String toString() {
         return value;

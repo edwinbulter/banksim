@@ -48,6 +48,7 @@ class SecurityConfig {
     SecurityFilterChain apiSecurity(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/admin/**").hasRole("admin")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))

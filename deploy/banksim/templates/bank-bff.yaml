@@ -48,6 +48,8 @@ spec:
               value: https://keycloak.{{ .Release.Namespace }}.svc:8443
             - name: BANKSIM_DB_HOST
               value: postgres.{{ .Release.Namespace }}.svc
+            - name: LOGGING_STRUCTURED_FORMAT_CONSOLE
+              value: ecs
             - name: BANKSIM_BFF_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:

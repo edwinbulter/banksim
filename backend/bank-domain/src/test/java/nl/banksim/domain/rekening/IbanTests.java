@@ -45,6 +45,11 @@ class IbanTests {
     }
 
     @Test
+    void gemaskeerdVoorLogs() {
+        assertThat(Iban.of("NL91ABNA0417164300").gemaskeerd()).isEqualTo("NL91…4300");
+    }
+
+    @Test
     void toStringIsDeWaardeZonderSpaties() {
         assertThat(Iban.of("NL91 ABNA 0417 1643 00").toString()).isEqualTo("NL91ABNA0417164300");
     }
