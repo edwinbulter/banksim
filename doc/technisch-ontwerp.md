@@ -1,6 +1,6 @@
 # BankSim – Technisch ontwerp
 
-Dit document beschrijft hoe het [functioneel ontwerp](functioneel-ontwerp.md) (FO) wordt gebouwd: een Java 21 / Spring Boot backend, een Angular/TypeScript frontend, Keycloak voor identiteit en PostgreSQL voor opslag, draaiend in een lokaal kind-cluster. De harde uitgangspunten zijn: atomaire overboekingen, rekenen met `BigDecimal`, zero trust, OWASP Top 10:2025, bestand tegen uitval van netwerk en services, regressietests voor de backend en Playwright e2e-tests voor de frontend.
+Dit document beschrijft hoe het [functioneel ontwerp](functioneel-ontwerp.md) (FO) wordt gebouwd: een Java 21 / Spring Boot backend, een Angular/TypeScript frontend, Keycloak voor identiteit en PostgreSQL voor opslag, draaiend in een eigen namespace `banksim` in het bestaande kind-cluster `single-node` (OrbStack). De harde uitgangspunten zijn: atomaire overboekingen, rekenen met `BigDecimal`, zero trust, OWASP Top 10:2025, bestand tegen uitval van netwerk en services, regressietests voor de backend en Playwright e2e-tests voor de frontend.
 
 ## 1. Uitgangspunten
 
@@ -12,13 +12,13 @@ Dit document beschrijft hoe het [functioneel ontwerp](functioneel-ontwerp.md) (F
 | Backend framework | Spring Boot, Spring Security, Spring Data JPA, Spring Modulith | Actuele stabiele 4.x bij implementatie |
 | BFF / gateway | Spring Cloud Gateway (Server WebMVC) + Spring Security OAuth2 Client | Spring Cloud release-train passend bij Boot 4.x |
 | Resilience | Resilience4j (+ `@Retryable`/`@ConcurrencyLimit` uit Spring Framework 7) | Actueel |
-| Identiteit | Keycloak (via Keycloak Operator) | Actuele stabiele, minimaal 26 |
-| Database | PostgreSQL via CloudNativePG-operator, migraties met Flyway | Minimaal 17 |
+| Identiteit | Keycloak (officiële image als Deployment in `banksim`, realm-import bij start) | Actuele stabiele, minimaal 26 |
+| Database | PostgreSQL (officiële image als StatefulSet in `banksim`), migraties met Flyway | Minimaal 17 |
 | Frontend | Angular (standalone components, signals), TypeScript strict | Actuele stabiele |
 | Rekenen in frontend | `big.js` | Actueel |
 | E2E-tests | Playwright (TypeScript) | Actueel |
 | Backend-tests | JUnit 5, AssertJ, Testcontainers, jqwik, ArchUnit, Toxiproxy, PIT | Actueel |
-| Platform | kind (lokaal), Istio ambient mesh, Gateway API, cert-manager | kind ≥ 0.31 |
+| Platform | Bestaand kind-cluster `single-node` in OrbStack, bestaande ingress-nginx, Helm-chart + installatiescripts | kind ≥ 0.31, Helm 4 |
 | Build | Maven (backend), npm (frontend), Jib (images) | Maven 3.9, Node 22 LTS |
 
 Versies worden niet in dit document vastgepind; de build gebruikt de Spring Boot BOM en een `package-lock.json`, zodat elke build reproduceerbaar is (zie A03 in hoofdstuk 11).
@@ -32,6 +32,8 @@ Versies worden niet in dit document vastgepind; de build gebruikt de Spring Boot
 | Saldo wordt berekend, niet opgeslagen | De simulatiedatum kan heen en weer; saldo = openingssaldo + som boekingen t/m die datum. |
 | Bedragen als `BigDecimal` / `NUMERIC(19,2)` / JSON-string | Geen afrondingsfouten in Java, database of browser. |
 | Migraties als aparte Job, JWKS lazy | De API start ook als database of Keycloak (nog) niet bereikbaar is en meldt zich dan alleen "niet ready". |
+| Alles in één namespace `banksim` van het bestaande cluster | Installeren en verwijderen met één script; geen operators, mesh of andere cluster-brede componenten. Alleen de bestaande ingress-nginx wordt gedeeld. |
+| Zero trust met mTLS in de applicaties zelf | Elke service heeft een eigen certificaat van een BankSim-CA en controleert het certificaat van de aanroeper. Geen service mesh nodig, dus niets buiten de namespace. |
 | Eén Angular-app met rol-afhankelijke routes | Het FO heeft één inlogscherm; de admin gebruikt de klantschermen in alleen-lezen modus. Eén host houdt het sessiecookie eenvoudig. |
 
 ## 2. Architectuur
@@ -39,13 +41,15 @@ Versies worden niet in dit document vastgepind; de build gebruikt de Spring Boot
 ```mermaid
 flowchart LR
     Browser["Browser<br/>Angular bank-web"]
-    subgraph kind["kind-cluster · namespace banksim · Istio ambient (mTLS)"]
-        GW["Istio Gateway<br/>TLS bank.localtest.me<br/>auth.localtest.me"]
+    subgraph shared["kind-cluster single-node · namespace ingress-nginx (bestaand)"]
+        GW["ingress-nginx<br/>TLS bank.localtest.me<br/>auth.localtest.me"]
+    end
+    subgraph kind["namespace banksim · mTLS tussen alle componenten"]
         WEB["bank-web<br/>nginx + Angular"]
         BFF["bank-bff<br/>Spring Cloud Gateway<br/>OIDC client, sessie"]
         API["bank-api<br/>Spring Boot<br/>resource server"]
         KC["Keycloak<br/>realm banksim"]
-        PG[("PostgreSQL<br/>CloudNativePG")]
+        PG[("PostgreSQL<br/>StatefulSet")]
         MIG["bank-migrate<br/>Flyway Job"]
         GEN["bank-datagen<br/>Job"]
     end
@@ -59,7 +63,8 @@ flowchart LR
     API -->|TLS verify-full| PG
     MIG --> PG
     GEN --> PG
-    GEN -->|realm-import| KC
+    GEN -->|Admin API: gebruikers| KC
+    KC --> PG
 ```
 
 | Component | Verantwoordelijkheid |
@@ -67,8 +72,8 @@ flowchart LR
 | `bank-web` | Angular-app, statisch geserveerd door nginx (unprivileged). Bevat alle schermen uit het FO. Doet zelf geen authenticatie: vraagt `/api/me` aan de BFF. |
 | `bank-bff` | OIDC Authorization Code + PKCE met Keycloak als confidential client; bewaart tokens server-side in een gedeelde sessie (Spring Session JDBC in PostgreSQL, schema `bff`, token-attributen versleuteld met AES-GCM), zodat elke replica elke request kan afhandelen; zet HttpOnly/Secure/SameSite=Strict-cookie en CSRF-token; stuurt `/api/**` door naar `bank-api` met het access token (`TokenRelay`); rate limiting; na login redirect naar `/` (klant) of `/admin` (admin). |
 | `bank-api` | Alle businesslogica en autorisatie. OAuth2 Resource Server: valideert elk JWT zelf (signatuur, issuer, audience `bank-api`, expiry). |
-| Keycloak | Gebruikers, wachtwoorden, rollen `klant` en `admin`, brute-force-detectie, optioneel TOTP. |
-| PostgreSQL | Grootboek, contacten, instellingen, audit log. |
+| Keycloak | Gebruikers, wachtwoorden, rollen `klant` en `admin`, brute-force-detectie, optioneel TOTP. Officiële image als Deployment (1 replica), database `keycloak` in dezelfde PostgreSQL. |
+| PostgreSQL | Grootboek, contacten, instellingen, audit log, BFF-sessies en de Keycloak-database. Officiële image als StatefulSet (1 instance) met PVC op storage class `standard`. |
 | `bank-migrate` | Flyway-migraties als Kubernetes Job, vóór (her)deploy van de API. |
 | `bank-datagen` | Deterministische generator van 5 jaar fake data + Keycloak-gebruikers (hoofdstuk 9). |
 
@@ -88,9 +93,8 @@ banksim/
 │   └── src/app/{klant,admin,shared,core}
 ├── e2e/                      Playwright-tests
 └── deploy/
-    ├── kind/                 kind-cluster.yaml
-    ├── platform/             cert-manager, Istio, CNPG, Keycloak operator
-    └── banksim/              Helm-chart van de applicatie
+    ├── scripts/              install.sh, uninstall.sh, certs.sh, reset-data.sh, trust-ca.sh
+    └── banksim/              Helm-chart: apps, Keycloak, PostgreSQL, Ingress, NetworkPolicies
 ```
 
 ## 3. Backend-ontwerp (`bank-api`)
@@ -325,7 +329,7 @@ Regels:
 - **Deterministisch**: vaste seed → steeds dezelfde data. Dit is ook de basis voor de e2e-tests.
 - Maakt de 10 huishoudens met profielen en het transactiepatroon uit het FO, plus de bedrijven met geldige NL-IBAN's (mod-97-checksum, fictieve bankcode `SIMB`). Alle IBAN's die betaalbaar zijn komen in `contact`.
 - Boekt in memory via dezelfde `bank-domain`-regels als `LedgerService`: double-entry, nooit rood (bij een tekort eerst een opname van de spaarrekening of een niet-vaste uitgave overslaan), maandelijkse rente.
-- Maakt een `KeycloakRealmImport` met 10 klanten en 1 admin; wachtwoorden komen uit een Kubernetes Secret dat bij installatie wordt gegenereerd, niet uit Git.
+- Maakt via de Keycloak Admin API (service-account-client `bank-datagen` met alleen de rol `manage-users`) 10 klanten en 1 admin aan; wachtwoorden komen uit een Kubernetes Secret dat bij installatie wordt gegenereerd, niet uit Git.
 - Controleert aan het eind de invarianten (som van alle boekingen = 0, geen negatief betaal- of spaarsaldo) en schrijft een checksum van de eindsaldi (golden master).
 
 ## 10. Security en zero trust
@@ -336,12 +340,15 @@ Uitgangspunt: geen enkele verbinding wordt vertrouwd omdat hij "van binnen" komt
 
 | Laag | Maatregel |
 | --- | --- |
-| Browser → cluster | Alleen HTTPS (TLS-certificaat van cert-manager met lokale CA), HSTS; HTTP wordt alleen omgeleid |
+| Browser → ingress | Alleen HTTPS via de bestaande ingress-nginx, met een certificaat voor `bank.localtest.me` en `auth.localtest.me` van de BankSim-CA; HSTS; HTTP wordt alleen omgeleid |
+| Ingress → banksim | ingress-nginx praat HTTPS met web, bff en Keycloak, verifieert hun certificaat (`proxy-ssl-verify`) en toont zelf een clientcertificaat (`proxy-ssl-secret`) |
 | Browser → BFF | Sessiecookie `__Host-SESSION` (HttpOnly, Secure, SameSite=Strict, Path=/); CSRF via `XSRF-TOKEN`-cookie + `X-XSRF-TOKEN`-header (Angular `HttpClient` ondersteunt dit standaard); sessie-timeout 15 min inactief, max 8 uur |
 | BFF → API | Access token (JWT, 5 min geldig) via `TokenRelay`; API valideert signatuur, `iss`, `aud=bank-api`, `exp`, `nbf` |
-| Pod ↔ pod | Istio ambient: mTLS met SPIFFE-identiteit per service-account; `AuthorizationPolicy` met default-deny; alleen toegestaan: gateway→web, gateway→bff, gateway→keycloak, bff→api, bff→keycloak, bff→postgres (sessies), api→keycloak, api→postgres, migrate/datagen→postgres, datagen→keycloak |
-| Netwerk | Kubernetes `NetworkPolicy` default-deny (ingress en egress) per namespace, met expliciete allow-regels; DNS, de Istio HBONE-poort 15008 en de kubelet-probes (in ambient mode gesnat naar `169.254.7.127/32`) worden expliciet toegestaan, anders wordt geen enkele pod ready |
-| API → PostgreSQL | TLS `sslmode=verify-full` met de CA van CloudNativePG; aparte DB-users voor api (DML), bff (alleen schema `bff`) en migratie (DDL) |
+| Pod ↔ pod | mTLS in de applicaties: elke component heeft een eigen certificaat van de BankSim-CA (CN = componentnaam, SAN = service-DNS) en eist een clientcertificaat van die CA. Daarnaast controleert de ontvanger de CN van de aanroeper tegen een allow-list: web en bff accepteren alleen `ingress`, api alleen `bank-bff`, PostgreSQL koppelt de CN aan de databasegebruiker. Toegestane paden: ingress→web, ingress→bff, ingress→keycloak, bff→api, bff→keycloak, bff→postgres (sessies), api→keycloak, api→postgres, keycloak→postgres, migrate/datagen→postgres, datagen→keycloak |
+| Netwerk | Kubernetes `NetworkPolicy` default-deny (ingress en egress) in namespace `banksim`, met allow-regels voor precies de paden hierboven; inkomend verkeer van buiten de namespace alleen vanuit namespace `ingress-nginx`; DNS naar `kube-system`; kubelet-probes vanaf het node-IP op de aparte health-poorten |
+| → PostgreSQL | TLS `sslmode=verify-full` en authenticatie met clientcertificaat (`pg_hba`: `hostssl … cert clientcert=verify-full`), geen wachtwoorden; aparte DB-users per component: `bank_app` (DML), `bank_bff` (alleen schema `bff`), `bank_migrate` (DDL), `bank_datagen`, `keycloak` (eigen database) |
+| Health-poorten | Probes gaan naar aparte poorten zonder clientcertificaat (Spring Actuator op 8081, Keycloak-management op 9000, nginx `/healthz` op 8081); die poorten staan via NetworkPolicy alleen open voor het node-IP en zitten niet in de Ingress |
+| Certificaten | `certs.sh` maakt bij installatie een BankSim-CA en per component een certificaat (geldig 90 dagen) als Secret in `banksim`; Java-componenten krijgen ze als PEM via Spring SSL bundles; `install.sh --rotate-certs` vernieuwt ze. De CA-sleutel blijft alleen lokaal in `deploy/.secrets/` (in `.gitignore`) |
 | Secrets | Kubernetes Secrets, gegenereerd bij installatie; nooit in Git, images of logs |
 
 ### 10.2 Inloggen
@@ -367,9 +374,9 @@ Keycloak gebruikt `KC_HOSTNAME=https://auth.localtest.me` met dynamisch backchan
 ```yaml
 spring.security.oauth2.client.provider.keycloak:
   authorization-uri: https://auth.localtest.me/realms/banksim/protocol/openid-connect/auth
-  token-uri:         https://keycloak-service.banksim.svc:8443/realms/banksim/protocol/openid-connect/token
-  jwk-set-uri:       https://keycloak-service.banksim.svc:8443/realms/banksim/protocol/openid-connect/certs
-  user-info-uri:     https://keycloak-service.banksim.svc:8443/realms/banksim/protocol/openid-connect/userinfo
+  token-uri:         https://keycloak.banksim.svc:8443/realms/banksim/protocol/openid-connect/token
+  jwk-set-uri:       https://keycloak.banksim.svc:8443/realms/banksim/protocol/openid-connect/certs
+  user-info-uri:     https://keycloak.banksim.svc:8443/realms/banksim/protocol/openid-connect/userinfo
   user-name-attribute: preferred_username
 ```
 
@@ -394,9 +401,9 @@ BFF en API valideren de issuer tegen de publieke URL `https://auth.localtest.me/
 | Categorie | Maatregelen in BankSim |
 | --- | --- |
 | **A01 Broken Access Control** | Deny-by-default (`@PreAuthorize` verplicht, ArchUnit-test); eigenaarschapscheck in elke query (IDOR); admin alleen-lezen; HMAC-ondertekende cursors; CORS uit (alles via één origin); e2e- en integratietests op toegang tot andermans IBAN en admin-URL's als klant |
-| **A02 Security Misconfiguration** | Actuator alleen `health` op aparte management-poort, niet via de Gateway; geen standaardwachtwoorden (Secrets gegenereerd); security headers; containers non-root, `readOnlyRootFilesystem`, `drop: [ALL]`, `seccompProfile: RuntimeDefault`; foutmeldingen zonder stacktraces; Keycloak-admin-console niet via de Gateway bereikbaar |
+| **A02 Security Misconfiguration** | Actuator alleen `health` op aparte management-poort, niet via de ingress; geen standaardwachtwoorden (Secrets gegenereerd); security headers; containers non-root, `readOnlyRootFilesystem`, `drop: [ALL]`, `seccompProfile: RuntimeDefault`; foutmeldingen zonder stacktraces; Keycloak-admin-console en `/admin` niet via de ingress bereikbaar (alleen `/realms/banksim` en `/resources`) |
 | **A03 Software Supply Chain Failures** | Versies via Spring Boot BOM en `package-lock.json` (`npm ci`); OWASP Dependency-Check en `npm audit` in CI met drempel; CycloneDX-SBOM voor backend, frontend en images; Trivy-scan van images; base-images op digest gepind; Renovate voor updates; alleen Maven Central en npmjs |
-| **A04 Cryptographic Failures** | TLS overal (ingress, mTLS in de mesh, PostgreSQL verify-full); geen eigen crypto; wachtwoord-hashing door Keycloak (Argon2/PBKDF2); JWT RS256/ES256 met sleutelrotatie in Keycloak; geen gevoelige data in URL's of logs |
+| **A04 Cryptographic Failures** | TLS overal (ingress, mTLS tussen alle componenten, PostgreSQL verify-full met certificaat-authenticatie); geen eigen crypto; wachtwoord-hashing door Keycloak (Argon2/PBKDF2); JWT RS256/ES256 met sleutelrotatie in Keycloak; geen gevoelige data in URL's of logs |
 | **A05 Injection** | Alleen geparametriseerde queries (Spring Data JPA, Criteria/Specification voor zoeken, geen string-concatenatie in SQL); Bean Validation op alle invoer (lengtes uit het FO: 70/34/140/25/35); IBAN-checksum; Angular-templates escapen; geen dynamische HTML |
 | **A06 Insecure Design** | Threat model (STRIDE) per flow; businessregels alleen server-side (nooit rood, alleen contacten, bedragen > 0); idempotency; transactielimieten en rate limiting (Bucket4j in de BFF met PostgreSQL-backend, dus gedeeld over replicas: login, betalen); double-entry met databaseconstraint als laatste verdedigingslinie |
 | **A07 Authentication Failures** | Keycloak: brute-force-detectie, wachtwoordbeleid, optioneel TOTP-MFA; sessie-id rotatie na login; korte access tokens (5 min) met refresh-token-rotatie; uitloggen trekt ook de Keycloak-sessie in (RP-initiated logout) |
@@ -431,7 +438,7 @@ Overig:
 
 - Virtual threads (`spring.threads.virtual.enabled=true`); de connection pool begrenst de belasting van de database.
 - Graceful shutdown (`server.shutdown=graceful`, 20 s) en een `preStop`-pauze, zodat lopende transacties afronden.
-- Minimaal 2 replicas voor `bank-api` en `bank-bff`, `PodDisruptionBudget` `minAvailable: 1`, `topologySpreadConstraints` over nodes (relevant in `multi-node-cluster`).
+- Minimaal 2 replicas voor `bank-api` en `bank-bff`, `PodDisruptionBudget` `minAvailable: 1` (zodat bij een rolling update altijd één pod bereikbaar blijft).
 - De frontend gebruikt een `HttpInterceptor` die 503 en netwerkfouten vertaalt naar een duidelijke melding en een retry-knop; formulieren behouden hun invoer.
 
 ## 13. Teststrategie backend (regressie)
@@ -475,7 +482,7 @@ Alle tests draaien in `mvn verify`; Testcontainers gebruikt de lokale Docker.
 
 - Map `e2e/`, TypeScript, page objects per FO-scherm (`LoginPage`, `OverzichtPage`, `BetaalrekeningPage`, `BetalenPage`, `SpaarrekeningPage`, `OverschrijvenPage`, `AdminPage`).
 - Twee Playwright-projects voor de klant- en de admin-frontend, elk met een eigen ingelogde `storageState` (aangemaakt in een setup-project dat via het echte Keycloak-inlogscherm inlogt). Browsers: Chromium, Firefox, WebKit.
-- Draait tegen de deployment in kind (`baseURL: https://bank.localtest.me`, lokale CA vertrouwd). Vóór de suite zet `globalSetup` de testdata terug door de `bank-datagen` Job opnieuw te draaien (vaste seed) en de simulatiedatum op een vaste datum te zetten. Er bestaan geen test-only endpoints in de applicatie.
+- Draait tegen de deployment in kind (`baseURL: https://bank.localtest.me`, lokale CA vertrouwd). Vóór de suite zet `globalSetup` de testdata terug met `deploy/scripts/reset-data.sh` (draait de `bank-datagen` Job opnieuw (vaste seed) en de simulatiedatum op een vaste datum te zetten. Er bestaan geen test-only endpoints in de applicatie.
 - Selectors via `getByRole`/`getByLabel` (dwingt toegankelijke markup af); `data-testid` alleen waar nodig.
 - Bij falen: trace, screenshot en video als artefact.
 
@@ -503,57 +510,68 @@ Alle tests draaien in `mvn verify`; Testcontainers gebruikt de lokale Docker.
 
 ### 15.1 Cluster
 
-Een eigen cluster `banksim` met poorten naar de host (de bestaande clusters `single-node` en `multi-node-cluster` blijven ongemoeid):
+BankSim komt in een eigen namespace `banksim` in het **bestaande** kind-cluster `single-node` (context `kind-single-node`), dat in OrbStack draait. Er wordt geen nieuw cluster gemaakt en niets buiten de namespace geïnstalleerd.
 
-```yaml
-# deploy/kind/kind-cluster.yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: banksim
-nodes:
-  - role: control-plane
-    extraPortMappings:
-      - containerPort: 30080   # Istio Gateway HTTP (NodePort)
-        hostPort: 80
-      - containerPort: 30443   # Istio Gateway HTTPS (NodePort)
-        hostPort: 443
-  - role: worker
-  - role: worker
-```
+| Bestaand in het cluster | Gebruik door BankSim |
+| --- | --- |
+| ingress-nginx (namespace `ingress-nginx`, hostPort 80/443) | Ingang voor `bank.localtest.me` en `auth.localtest.me` via gewone `Ingress`-resources |
+| Storage class `standard` (local-path, `Delete`) | PVC van PostgreSQL; bij verwijderen van de namespace verdwijnt de data mee |
+| kindnet | Dwingt de `NetworkPolicy`'s af |
 
-`*.localtest.me` verwijst naar 127.0.0.1, dus geen `/etc/hosts`-aanpassing nodig. kind v0.31 gebruikt kindnet, dat `NetworkPolicy` afdwingt; een rooktest na installatie controleert dat een pod zonder toestemming `bank-api` niet kan bereiken.
+`*.localtest.me` verwijst naar 127.0.0.1, dus geen `/etc/hosts`-aanpassing nodig. De node krijgt van OrbStack 10 CPU's en ongeveer 12 GB geheugen; BankSim vraagt in totaal ongeveer 3 GB (Keycloak 1 GB, PostgreSQL 512 MB, api en bff elk 2 × 512 MB, web 2 × 32 MB).
 
-### 15.2 Installatievolgorde
+Aandachtspunt: de bestaande ingress-nginx is versie 1.11.3; het ingress-nginx-project is in 2026 gestopt met onderhoud. Voor deze lokale simulatie is dat acceptabel; een overstap naar een Gateway API-implementatie is een latere, cluster-brede keuze.
 
-1. Gateway API CRD's, cert-manager + lokale CA (`ClusterIssuer`)
-2. Istio (profiel `ambient`), namespace `banksim` met label `istio.io/dataplane-mode=ambient`
-3. CloudNativePG-operator → `Cluster` `bank-db` (TLS, users `bank_app` en `bank_migrate`)
-4. Keycloak Operator → `Keycloak` + `KeycloakRealmImport` (realm `banksim`, clients `bank-bff` confidential)
-5. Job `bank-migrate` (Flyway)
-6. Job `bank-datagen` (data + Keycloak-gebruikers)
-7. Helm-chart `banksim`: `bank-api`, `bank-bff`, `bank-web`, `Gateway`/`HTTPRoute`, `AuthorizationPolicy`, `NetworkPolicy`, `PodDisruptionBudget`
+### 15.2 Installeren en verwijderen
+
+Alles gaat via scripts in `deploy/scripts/`. Ze controleren eerst dat de kubectl-context `kind-single-node` is (te overschrijven met `--context`), zodat nooit per ongeluk een ander cluster wordt geraakt.
+
+| Script | Wat het doet |
+| --- | --- |
+| `install.sh` | Idempotent. Controleert vereisten (kubectl, helm, docker, openssl, ingress-nginx aanwezig); bouwt de images (overslaan met `--skip-build`) en laadt ze met `kind load docker-image --name single-node`; maakt via `certs.sh` de CA en certificaten als ze nog niet bestaan; maakt Secrets met willekeurige wachtwoorden en sleutels; draait `helm upgrade --install banksim deploy/banksim -n banksim --create-namespace --wait`; toont de URL's en hoe je de testwachtwoorden ophaalt |
+| `uninstall.sh` | Vraagt bevestiging (overslaan met `-y`); `helm uninstall banksim` en verwijdert de namespace `banksim` met alle Secrets en de PVC (en dus de data). Met `--purge` ook de BankSim-images van de node en de lokale CA-bestanden. Raakt niets buiten de namespace |
+| `certs.sh` | Maakt de BankSim-CA en de certificaten per component (zie 10.1); `--rotate` vernieuwt ze |
+| `reset-data.sh` | Draait de `bank-datagen` Job opnieuw (vaste seed) en zet de simulatiedatum terug; gebruikt door de e2e-tests |
+| `trust-ca.sh` | Optioneel: zet de BankSim-CA in de macOS-sleutelhanger zodat de browser `https://bank.localtest.me` vertrouwt; `--remove` haalt hem weer weg (`uninstall.sh --purge` doet dat ook) |
+
+De Helm-chart installeert in deze volgorde (via Helm-hooks en `--wait`):
+
+1. Secrets en ConfigMaps (certificaten, realm-configuratie, nginx-config)
+2. PostgreSQL StatefulSet met init-script voor databases `bank` en `keycloak` en de gebruikers per component
+3. Job `bank-migrate` (Flyway; wacht met retries tot PostgreSQL bereikbaar is)
+4. Keycloak Deployment (`start --import-realm`, realm `banksim` met clients `bank-bff` en `bank-datagen`; client secrets via omgevingsvariabelen uit Secrets)
+5. Job `bank-datagen` (data + Keycloak-gebruikers)
+6. `bank-api`, `bank-bff`, `bank-web`, `Ingress`-resources, `NetworkPolicy`'s, `PodDisruptionBudget`'s
+
+Na installatie controleert `install.sh` met een rooktest dat een tijdelijke pod zonder toestemming `bank-api` niet kan bereiken, en dat `https://bank.localtest.me` antwoordt.
+
+De Ingress gebruikt de annotaties `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`, `proxy-ssl-secret: banksim/tls-ingress-client`, `proxy-ssl-verify: "on"` en `proxy-ssl-name` per service, zodat ook het stuk tussen ingress-nginx en BankSim versleuteld en wederzijds geauthenticeerd is.
 
 ### 15.3 Images en pods
 
-- Backend-images met Jib (distroless Java 21, non-root), frontend-image op `nginx-unprivileged`; laden met `kind load docker-image --name banksim`.
+- Backend-images met Jib (distroless Java 21, non-root), frontend-image op `nginx-unprivileged`; tag = git-commit; laden met `kind load docker-image --name single-node`; `imagePullPolicy: IfNotPresent`.
 - Elke pod: `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`, `automountServiceAccountToken: false` (behalve waar nodig), eigen service-account per component.
-- Resources: requests/limits per pod; probes: `startupProbe` op een health group `startup` (DB één keer bereikt, JWKS één keer geladen), `livenessProbe` op `/actuator/health/liveness`, `readinessProbe` op `/actuator/health/readiness` (zonder externe afhankelijkheden) (management-poort 8081, niet via de Gateway).
+- Resources: requests/limits per pod; probes: `startupProbe` op een health group `startup` (DB één keer bereikt, JWKS één keer geladen), `livenessProbe` op `/actuator/health/liveness`, `readinessProbe` op `/actuator/health/readiness` (zonder externe afhankelijkheden) (management-poort 8081, niet via de ingress).
 - Configuratie via ConfigMaps; geheimen (DB-wachtwoorden, client secret, HMAC-sleutel cursors, Keycloak-wachtwoorden) via Secrets.
 
 ## 16. Build en CI
 
-Lokaal één `Makefile` met targets `cluster`, `platform`, `build`, `test`, `deploy`, `e2e`. Pipeline (bijv. GitHub Actions) in deze volgorde:
+Lokaal één `Makefile` met targets `build`, `test`, `install` en `uninstall` (roepen de scripts aan) en `e2e`. Pipeline (bijv. GitHub Actions) in deze volgorde:
 
 1. `mvn verify` (unit, slice, integratie, architectuur, contract, JaCoCo, PIT op `bank-domain`)
 2. `npm ci && npm run lint && npm test && npm run build` (frontend)
 3. Dependency-Check, `npm audit`, CycloneDX-SBOM
 4. Images bouwen (Jib, Docker), Trivy-scan, optioneel cosign
-5. kind-cluster opzetten, deployen, Playwright e2e
+5. In CI een tijdelijk kind-cluster met ingress-nginx opzetten, `install.sh --context …` en Playwright e2e
 6. Artefacten: testrapporten, SBOM's, Playwright-traces
 
-## 17. Open punten
+## 17. Genomen beslissingen
 
-- [ ] Is TOTP-MFA verplicht voor de admin (aanbevolen), en ook voor klanten?
-- [ ] Istio ambient of Linkerd als mesh? Dit ontwerp kiest Istio ambient (volledig open source, ook Gateway API-implementatie).
-- [ ] Helm of Kustomize voor de applicatie-manifests? Dit ontwerp kiest Helm.
-- [ ] Welke transactielimiet per betaling/dag (bovenop "nooit rood")?
+| Onderwerp | Beslissing |
+| --- | --- |
+| Cluster | Namespace `banksim` in het bestaande kind-cluster `single-node` (OrbStack); installeren en verwijderen met scripts |
+| Zero trust tussen services | mTLS in de applicaties met een eigen BankSim-CA; geen service mesh |
+| Keycloak en PostgreSQL | Officiële images in dezelfde namespace, zonder operators |
+| Manifests | Helm-chart `deploy/banksim` |
+| MFA | TOTP instelbaar in de realm, standaard uit |
+| Transactielimiet | Geen limiet naast "nooit rood"; wel rate limiting (hoofdstuk 10) |
