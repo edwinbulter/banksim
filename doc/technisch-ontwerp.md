@@ -70,7 +70,7 @@ flowchart LR
 | Component | Verantwoordelijkheid |
 | --- | --- |
 | `bank-web` | Angular-app, statisch geserveerd door nginx (unprivileged). Bevat alle schermen uit het FO. Doet zelf geen authenticatie: vraagt `/api/me` aan de BFF. |
-| `bank-bff` | OIDC Authorization Code + PKCE met Keycloak als confidential client; bewaart tokens server-side in een gedeelde sessie (Spring Session JDBC in PostgreSQL, schema `bff`, token-attributen versleuteld met AES-GCM), zodat elke replica elke request kan afhandelen; zet HttpOnly/Secure/SameSite=Strict-cookie en CSRF-token; stuurt `/api/**` door naar `bank-api` met het access token (`TokenRelay`); rate limiting; na login redirect naar `/` (klant) of `/admin` (admin). |
+| `bank-bff` | OIDC Authorization Code + PKCE met Keycloak als confidential client; bewaart tokens server-side in een gedeelde sessie (Spring Session JDBC in PostgreSQL, schema `bff`, token-attributen versleuteld met AES-GCM; expliciet `HttpSessionOAuth2AuthorizedClientRepository`, want de Spring Boot-standaard houdt tokens in het geheugen van één pod), zodat elke replica elke request kan afhandelen; zet HttpOnly/Secure/SameSite=Strict-cookie en CSRF-token; stuurt `/api/**` door naar `bank-api` met het access token (`TokenRelay`); rate limiting; na login redirect naar `/` (klant) of `/admin` (admin). |
 | `bank-api` | Alle businesslogica en autorisatie. OAuth2 Resource Server: valideert elk JWT zelf (signatuur, issuer, audience `bank-api`, expiry). |
 | Keycloak | Gebruikers, wachtwoorden, rollen `klant` en `admin`, brute-force-detectie, optioneel TOTP. Officiële image als Deployment (1 replica), database `keycloak` in dezelfde PostgreSQL. |
 | PostgreSQL | Grootboek, contacten, instellingen, audit log, BFF-sessies en de Keycloak-database. Officiële image als StatefulSet (1 instance) met PVC op storage class `standard`. |
@@ -85,6 +85,7 @@ banksim/
 ├── backend/                  Maven multi-module
 │   ├── pom.xml               parent, Spring Boot BOM, plugin-versies
 │   ├── bank-domain/          Money, Iban, ledger-regels (geen Spring-afhankelijkheden)
+│   ├── bank-platform/        gedeelde infrastructuur: mTLS-clientcontrole (CN-allow-list)
 │   ├── bank-api/             REST API (Spring Modulith-modules)
 │   ├── bank-bff/             Spring Cloud Gateway BFF
 │   ├── bank-migrate/         Flyway-migraties + runner
@@ -348,7 +349,7 @@ Uitgangspunt: geen enkele verbinding wordt vertrouwd omdat hij "van binnen" komt
 | Netwerk | Kubernetes `NetworkPolicy` default-deny (ingress en egress) in namespace `banksim`, met allow-regels voor precies de paden hierboven; inkomend verkeer van buiten de namespace alleen vanuit namespace `ingress-nginx`; DNS naar `kube-system`; kubelet-probes vanaf het node-IP op de aparte health-poorten |
 | → PostgreSQL | TLS `sslmode=verify-full` en authenticatie met clientcertificaat (`pg_hba`: `hostssl … cert clientcert=verify-full`), geen wachtwoorden; aparte DB-users per component: `bank_app` (DML), `bank_bff` (alleen schema `bff`), `bank_migrate` (DDL), `bank_datagen`, `keycloak` (eigen database) |
 | Health-poorten | Probes gaan naar aparte poorten zonder clientcertificaat (Spring Actuator op 8081, Keycloak-management op 9000, nginx `/healthz` op 8081); die poorten staan via NetworkPolicy alleen open voor het node-IP en zitten niet in de Ingress |
-| Certificaten | `certs.sh` maakt bij installatie een BankSim-CA en per component een certificaat (geldig 90 dagen) als Secret in `banksim`; Java-componenten krijgen ze als PEM via Spring SSL bundles; `install.sh --rotate-certs` vernieuwt ze. De CA-sleutel blijft alleen lokaal in `deploy/.secrets/` (in `.gitignore`) |
+| Certificaten | `certs.sh` maakt bij installatie een BankSim-CA en per component een certificaat (geldig 90 dagen) als Secret in `banksim`; `public` is het servercertificaat voor de publieke hosts op ingress-nginx, `ingress` het clientcertificaat waarmee ingress-nginx zich bij de backends meldt; Java-componenten krijgen ze als PEM via Spring SSL bundles; `install.sh --rotate-certs` vernieuwt ze. De CA-sleutel blijft alleen lokaal in `deploy/.secrets/` (in `.gitignore`) |
 | Secrets | Kubernetes Secrets, gegenereerd bij installatie; nooit in Git, images of logs |
 
 ### 10.2 Inloggen

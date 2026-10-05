@@ -2,7 +2,7 @@
 
 BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met ongeveer 5 jaar realistische transactiehistorie. Een admin kan de datum van de simulatie verzetten; alle rekeninghouders zien hun rekeningen dan alsof het die dag is.
 
-> **Status:** ontwerpfase. Het functioneel en technisch ontwerp zijn klaar; de code moet nog gebouwd worden. De instructies onder [Aan de slag](#aan-de-slag) beschrijven hoe het volgens het ontwerp gaat werken.
+> **Status:** fase 1 van de implementatie is klaar: BankSim installeert en verwijdert met scripts in het kind-cluster, met inloggen via Keycloak, mTLS tussen alle componenten en NetworkPolicies. De bankfunctionaliteit uit het functioneel ontwerp volgt in de volgende fases.
 
 ## Documentatie
 
@@ -98,7 +98,7 @@ Daarna is de applicatie bereikbaar op <https://bank.localtest.me>; Keycloak draa
 ```bash
 make test       # backend: unit, integratie (Testcontainers), architectuur, contract en mutation tests
 make e2e        # Playwright e2e-tests tegen de installatie in namespace banksim
-deploy/scripts/reset-data.sh   # testdata terugzetten naar de vaste beginstand
+deploy/scripts/reset-data.sh   # testdata terugzetten naar de vaste beginstand (vanaf fase 3)
 ```
 
 De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).

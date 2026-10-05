@@ -3,3 +3,14 @@ spring:
     name: bank-migrate
   main:
     web-application-type: none
+  datasource:
+    # Authenticatie met clientcertificaat (CN bank-migrate → databasegebruiker bank_migrate).
+    url: >-
+      jdbc:postgresql://${BANKSIM_DB_HOST:postgres.banksim.svc}:5432/bank?sslmode=verify-full&sslrootcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/ca.crt&sslcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.crt&sslkey=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.pk8
+    username: bank_migrate
+    hikari:
+      connection-timeout: 5000
+  flyway:
+    # De Job wacht met retries tot PostgreSQL bereikbaar is.
+    connect-retries: 30
+    connect-retries-interval: 5s

@@ -1,0 +1,73 @@
+{{- $ctx := dict "root" . "name" "bank-web" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: bank-web
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "banksim.selector" $ctx | nindent 4 }}
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-web
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas.web }}
+  selector:
+    matchLabels:
+      {{- include "banksim.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "banksim.labels" $ctx | nindent 8 }}
+      {{- include "banksim.podAnnotations" . | nindent 6 }}
+    spec:
+      {{- include "banksim.podSecurity" (dict "uid" 101) | nindent 6 }}
+      containers:
+        - name: bank-web
+          image: {{ include "banksim.image" (dict "root" . "key" "web") }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: health
+              containerPort: 8081
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.web | nindent 12 }}
+          {{- include "banksim.containerSecurity" dict | nindent 10 }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/banksim/tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- include "banksim.tlsVolume" $ctx | nindent 8 }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bank-web
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "banksim.selector" $ctx | nindent 6 }}

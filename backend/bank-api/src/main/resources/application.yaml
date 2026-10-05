@@ -4,13 +4,36 @@ spring:
   threads:
     virtual:
       enabled: true
+  ssl:
+    bundle:
+      pem:
+        server:
+          keystore:
+            certificate: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.crt
+            private-key: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.key
+          truststore:
+            certificate: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/ca.crt
 
 server:
+  port: 8443
   shutdown: graceful
+  ssl:
+    bundle: server
+    client-auth: need
+
+banksim:
+  security:
+    issuer: ${BANKSIM_KEYCLOAK_PUBLIC_URL:https://auth.localtest.me}/realms/banksim
+    jwk-set-uri: ${BANKSIM_KEYCLOAK_INTERNAL_URL:https://keycloak.banksim.svc:8443}/realms/banksim/protocol/openid-connect/certs
+    audience: bank-api
+  mtls:
+    allowed-clients: bank-bff
 
 management:
   server:
     port: 8081
+    ssl:
+      enabled: false
   endpoints:
     web:
       exposure:
@@ -19,3 +42,10 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        startup:
+          include: jwks
+        readiness:
+          include: readinessState
+        liveness:
+          include: livenessState

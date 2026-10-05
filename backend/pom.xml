@@ -19,6 +19,7 @@
 
     <modules>
         <module>bank-domain</module>
+        <module>bank-platform</module>
         <module>bank-api</module>
         <module>bank-bff</module>
         <module>bank-migrate</module>
@@ -48,6 +49,8 @@
         <!-- Distroless Java 21, runs as non-root -->
         <jib.from.image>gcr.io/distroless/java21-debian12:nonroot</jib.from.image>
         <image.tag>dev</image.tag>
+        <!-- Alleen de applicatiemodules zetten dit op false -->
+        <jib.skip>true</jib.skip>
     </properties>
 
     <dependencyManagement>
@@ -55,6 +58,11 @@
             <dependency>
                 <groupId>nl.banksim</groupId>
                 <artifactId>bank-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>nl.banksim</groupId>
+                <artifactId>bank-platform</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

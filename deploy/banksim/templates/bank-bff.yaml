@@ -1,0 +1,90 @@
+{{- $ctx := dict "root" . "name" "bank-bff" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: bank-bff
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "banksim.selector" $ctx | nindent 4 }}
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-bff
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas.bff }}
+  selector:
+    matchLabels:
+      {{- include "banksim.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "banksim.labels" $ctx | nindent 8 }}
+      {{- include "banksim.podAnnotations" . | nindent 6 }}
+    spec:
+      {{- include "banksim.podSecurity" (dict "uid" 65532) | nindent 6 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: bank-bff
+          image: {{ include "banksim.image" (dict "root" . "key" "bff") }}
+          imagePullPolicy: IfNotPresent
+          env:
+            {{- include "banksim.javaTls" $ctx | nindent 12 }}
+            - name: BANKSIM_PUBLIC_URL
+              value: https://{{ .Values.hosts.bank }}
+            - name: BANKSIM_API_URL
+              value: https://bank-api.{{ .Release.Namespace }}.svc:8443
+            - name: BANKSIM_KEYCLOAK_PUBLIC_URL
+              value: https://{{ .Values.hosts.auth }}
+            - name: BANKSIM_KEYCLOAK_INTERNAL_URL
+              value: https://keycloak.{{ .Release.Namespace }}.svc:8443
+            - name: BANKSIM_DB_HOST
+              value: postgres.{{ .Release.Namespace }}.svc
+            - name: BANKSIM_BFF_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: bff-client-secret
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: management
+              containerPort: 8081
+          {{- include "banksim.springProbes" . | nindent 10 }}
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          resources:
+            {{- toYaml .Values.resources.bff | nindent 12 }}
+          {{- include "banksim.containerSecurity" dict | nindent 10 }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/banksim/tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- include "banksim.tlsVolume" $ctx | nindent 8 }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bank-bff
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "banksim.selector" $ctx | nindent 6 }}

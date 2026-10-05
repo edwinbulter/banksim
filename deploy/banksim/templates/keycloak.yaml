@@ -1,0 +1,147 @@
+{{- $ctx := dict "root" . "name" "keycloak" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+data:
+  # ${...} worden door Keycloak bij de import vervangen door omgevingsvariabelen uit Secrets.
+  realm-banksim.json: |
+    {{- tpl (.Files.Get "files/realm-banksim.json") . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "banksim.selector" $ctx | nindent 4 }}
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "banksim.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "banksim.labels" $ctx | nindent 8 }}
+      {{- include "banksim.podAnnotations" . | nindent 6 }}
+    spec:
+      {{- include "banksim.podSecurity" (dict "uid" 1000) | nindent 6 }}
+      containers:
+        - name: keycloak
+          image: {{ .Values.images.keycloak }}
+          imagePullPolicy: IfNotPresent
+          args: ["start", "--import-realm"]
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: >-
+                jdbc:postgresql://postgres.{{ .Release.Namespace }}.svc:5432/keycloak?sslmode=verify-full&sslrootcert=/etc/banksim/tls/ca.crt&sslcert=/etc/banksim/tls/tls.crt&sslkey=/etc/banksim/tls/tls.pk8
+            - name: KC_DB_USERNAME
+              value: keycloak
+            - name: KC_HOSTNAME
+              value: https://{{ .Values.hosts.auth }}
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HTTP_ENABLED
+              value: "false"
+            - name: KC_HTTPS_PORT
+              value: "8443"
+            - name: KC_HTTPS_CERTIFICATE_FILE
+              value: /etc/banksim/tls/tls.crt
+            - name: KC_HTTPS_CERTIFICATE_KEY_FILE
+              value: /etc/banksim/tls/tls.key
+            # Elke aanroeper (ingress, bff, api, datagen) moet een clientcertificaat van de BankSim-CA tonen.
+            - name: KC_HTTPS_CLIENT_AUTH
+              value: required
+            - name: KC_HTTPS_TRUST_STORE_FILE
+              value: /etc/banksim/tls/truststore.p12
+            - name: KC_HTTPS_TRUST_STORE_TYPE
+              value: PKCS12
+            - name: KC_HTTPS_TRUST_STORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tls-keycloak
+                  key: keystore-password
+            - name: KC_HTTPS_PROTOCOLS
+              value: TLSv1.3
+            # Health op de management-poort zonder TLS, alleen bereikbaar voor kubelet-probes.
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_HTTP_MANAGEMENT_SCHEME
+              value: http
+            - name: KC_HTTP_MANAGEMENT_PORT
+              value: "9000"
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: admin-password
+            - name: BFF_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: bff-client-secret
+            - name: DATAGEN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: datagen-client-secret
+            - name: DEMO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: demo-password
+            - name: JAVA_OPTS_KC_HEAP
+              value: -XX:MaxRAMPercentage=70
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: management
+              containerPort: 9000
+          startupProbe:
+            httpGet: { path: /health/started, port: management }
+            periodSeconds: 5
+            failureThreshold: 120
+          livenessProbe:
+            httpGet: { path: /health/live, port: management }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health/ready, port: management }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.keycloak | nindent 12 }}
+          # Keycloak bouwt bij de start zijn configuratie in /opt/keycloak; daarom geen read-only rootfs.
+          {{- include "banksim.containerSecurity" (dict "readOnly" false) | nindent 10 }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/banksim/tls
+              readOnly: true
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        {{- include "banksim.tlsVolume" (dict "name" "keycloak") | nindent 8 }}
+        - name: realm
+          configMap:
+            name: keycloak-realm

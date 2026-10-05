@@ -4,13 +4,59 @@ spring:
   threads:
     virtual:
       enabled: true
+  ssl:
+    bundle:
+      pem:
+        server:
+          keystore:
+            certificate: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.crt
+            private-key: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.key
+          truststore:
+            certificate: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/ca.crt
+  datasource:
+    # Authenticatie met clientcertificaat (CN bank-bff → databasegebruiker bank_bff), geen wachtwoord.
+    url: >-
+      jdbc:postgresql://${BANKSIM_DB_HOST:postgres.banksim.svc}:5432/bank?currentSchema=bff&sslmode=verify-full&sslrootcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/ca.crt&sslcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.crt&sslkey=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.pk8
+    username: bank_bff
+    hikari:
+      connection-timeout: 3000
+      validation-timeout: 1000
+      maximum-pool-size: 10
+  session:
+    timeout: 15m
+    jdbc:
+      table-name: bff.spring_session
+      initialize-schema: never
+  http:
+    clients:
+      connect-timeout: 3s
+      read-timeout: 5s
 
 server:
+  port: 8443
   shutdown: graceful
+  ssl:
+    bundle: server
+    client-auth: need
+
+banksim:
+  mtls:
+    allowed-clients: ingress
+  bff:
+    public-url: ${BANKSIM_PUBLIC_URL:https://bank.localtest.me}
+    api-url: ${BANKSIM_API_URL:https://bank-api.banksim.svc:8443}
+    keycloak:
+      public-url: ${BANKSIM_KEYCLOAK_PUBLIC_URL:https://auth.localtest.me}
+      internal-url: ${BANKSIM_KEYCLOAK_INTERNAL_URL:https://keycloak.banksim.svc:8443}
+      realm: banksim
+      client-id: bank-bff
+      client-secret: ${BANKSIM_BFF_CLIENT_SECRET}
 
 management:
   server:
     port: 8081
+    ssl:
+      enabled: false
   endpoints:
     web:
       exposure:
@@ -19,3 +65,10 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        startup:
+          include: db,keycloak
+        readiness:
+          include: readinessState
+        liveness:
+          include: livenessState

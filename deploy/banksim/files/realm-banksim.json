@@ -1,0 +1,101 @@
+{
+  "realm": "banksim",
+  "displayName": "BankSim",
+  "enabled": true,
+  "sslRequired": "all",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "passwordPolicy": "length(12) and notUsername and notEmail",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 900,
+  "ssoSessionMaxLifespan": 28800,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["nl", "en"],
+  "defaultLocale": "nl",
+  "roles": {
+    "realm": [
+      { "name": "klant", "description": "Rekeninghouder van BankSim" },
+      { "name": "admin", "description": "Beheerder van BankSim (alleen-lezen inzage, simulatiedatum)" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "bank-bff",
+      "name": "BankSim BFF",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${BFF_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": false,
+      "redirectUris": ["https://{{ .Values.hosts.bank }}/login/oauth2/code/keycloak"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://{{ .Values.hosts.bank }}/"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience bank-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "bank-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ],
+      "defaultClientScopes": ["basic", "profile", "roles", "acr"],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "bank-datagen",
+      "name": "BankSim data-generator",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${DATAGEN_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": ["basic", "roles"]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-bank-datagen",
+      "enabled": true,
+      "serviceAccountClientId": "bank-datagen",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users"]
+      }
+    },
+    {
+      "username": "{{ .Values.keycloak.demoUser }}",
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Klant",
+      "email": "{{ .Values.keycloak.demoUser }}@banksim.local",
+      "emailVerified": true,
+      "realmRoles": ["klant"],
+      "credentials": [
+        { "type": "password", "value": "${DEMO_PASSWORD}", "temporary": false }
+      ]
+    }
+  ]
+}
