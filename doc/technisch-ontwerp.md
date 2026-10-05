@@ -181,7 +181,6 @@ erDiagram
         varchar omschrijving "140"
         varchar betalingskenmerk "25"
         varchar extra_omschrijving "35"
-        uuid idempotency_key
     }
     BOEKING {
         uuid id PK
@@ -191,6 +190,7 @@ erDiagram
         text tegen_naam
         numeric bedrag "19,2, negatief = af"
         date boekdatum
+        timestamptz transactie_tijdstip "kopie voor keyset-paginering"
     }
     CONTACT {
         text iban PK
@@ -203,14 +203,14 @@ Overige tabellen:
 
 | Tabel | Doel |
 | --- | --- |
-| `idempotency_key` | `key`, `rekeninghouder_id`, `request_hash`, `response_status`, `response_body`, `aangemaakt_op`; uniek op (`key`, `rekeninghouder_id`) |
+| `idempotency_key` | `sleutel`, `rekeninghouder_id`, `request_hash`, `response_status`, `response_body`, `aangemaakt_op`; primaire sleutel (`sleutel`, `rekeninghouder_id`) |
 | `audit_log` | Wie, wat, wanneer, correlation-id; append-only (geen UPDATE/DELETE-rechten voor de applicatie-user) |
 | `instelling` | `simulatiedatum`, `data_vanaf`, `data_tot` |
 
 Constraints en indexen:
 
-- `CHECK (bedrag <> 0)` op `boeking`; een deferred constraint-trigger controleert dat de som van de boekingen per `overboeking_id` precies 0 is en dat het er 2 zijn.
-- Index `boeking (rekening_iban, boekdatum DESC, id DESC)` voor saldo en keyset-paginering.
+- `CHECK (bedrag <> 0)` op `boeking`; een deferred constraint-trigger controleert bij commit dat elke overboeking precies 2 boekingen op 2 verschillende rekeningen heeft die samen 0 zijn.
+- Index `boeking (rekening_iban, transactie_tijdstip DESC, id DESC)` voor keyset-paginering en `boeking (rekening_iban, boekdatum) INCLUDE (bedrag)` voor het saldo op een datum.
 - `pg_trgm` GIN-index op `tegen_naam` en `omschrijving` voor "Naam, bedrag, IBAN of omschrijving".
 - Saldo op datum D: `openingssaldo + SUM(bedrag) WHERE rekening_iban = ? AND boekdatum <= D`.
 - De applicatie-user heeft alleen DML-rechten; DDL alleen voor de migratie-user.
