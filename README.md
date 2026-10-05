@@ -1,0 +1,91 @@
+# BankSim
+
+BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met ongeveer 5 jaar realistische transactiehistorie. Een admin kan de datum van de simulatie verzetten; alle rekeninghouders zien hun rekeningen dan alsof het die dag is.
+
+> **Status:** ontwerpfase. Het functioneel en technisch ontwerp zijn klaar; de code moet nog gebouwd worden. De instructies onder [Aan de slag](#aan-de-slag) beschrijven hoe het volgens het ontwerp gaat werken.
+
+## Documentatie
+
+| Document | Inhoud |
+| --- | --- |
+| [Functioneel ontwerp](doc/functioneel-ontwerp.md) | Schermen met schetsen, functionaliteit, validaties, fake data en beantwoorde open punten |
+| [Technisch ontwerp](doc/technisch-ontwerp.md) | Architectuur, API, datamodel, security, OWASP Top 10:2025, resilience, teststrategie en deployment |
+
+## Functionaliteit
+
+- **Overzicht**: na het inloggen ziet een klant de eigen betaal- en spaarrekening met saldo.
+- **Betaalrekening**: transacties per datum, 50 tegelijk met "Toon meer", uitklapbare details, en uitgebreid zoeken (tekst, bedrag, transactietype, in/uit).
+- **Betalen**: alleen naar bekende contacten, met controlescherm. Rood staan is niet toegestaan.
+- **Spaarrekening**: 3% rente per jaar, dagelijks berekend en maandelijks bijgeschreven; inleggen en opnemen via het Overschrijven-scherm.
+- **Admin**: overzicht van alle rekeninghouders, alleen-lezen inzage in hun transacties en het instellen van de simulatiedatum.
+- **Fake data**: deterministische generator voor 10 huishoudens van 1 oktober 2021 t/m 31 december 2026.
+
+Zie het [functioneel ontwerp](doc/functioneel-ontwerp.md) voor de schermen en regels.
+
+## Architectuur
+
+```mermaid
+flowchart LR
+    Browser["Browser<br/>Angular bank-web"] -->|HTTPS| GW["Istio Gateway"]
+    GW --> WEB["bank-web<br/>nginx"]
+    GW --> BFF["bank-bff<br/>Spring Cloud Gateway"]
+    GW --> KC["Keycloak"]
+    BFF -->|JWT| API["bank-api<br/>Spring Boot"]
+    API --> PG[("PostgreSQL")]
+    BFF --> PG
+```
+
+| Component | Rol |
+| --- | --- |
+| `bank-web` | Angular-app met de klant- en adminschermen |
+| `bank-bff` | Backend-for-Frontend: logt in bij Keycloak, houdt tokens server-side, sessie via HttpOnly-cookie |
+| `bank-api` | Businesslogica, grootboek en autorisatie; valideert elk JWT zelf |
+| `bank-migrate` | Flyway-migraties als Kubernetes Job |
+| `bank-datagen` | Generator van de fake data en Keycloak-gebruikers |
+| Keycloak | Gebruikers, rollen `klant` en `admin` |
+| PostgreSQL | Grootboek, contacten, sessies, audit log |
+
+Belangrijkste principes (details in het [technisch ontwerp](doc/technisch-ontwerp.md)):
+
+- **Atomaire overboekingen**: elke geldbeweging gaat via één `LedgerService`; af- en bijschrijving in dezelfde databasetransactie (hoofdstuk 6).
+- **BigDecimal**: bedragen zijn overal `BigDecimal`, `NUMERIC(19,2)` en in JSON een string; in de frontend `big.js` (hoofdstuk 5).
+- **Zero trust**: BFF met OIDC, JWT-validatie in de API, mTLS tussen alle pods (Istio ambient), default-deny NetworkPolicies (hoofdstuk 10).
+- **OWASP Top 10:2025**: maatregelen per categorie A01–A10 (hoofdstuk 11).
+- **Resilience**: start zonder database of Keycloak, timeouts, circuit breakers, idempotente betalingen (hoofdstuk 12).
+
+## Techstack
+
+Java 21 · Spring Boot · Spring Cloud Gateway · Keycloak · PostgreSQL (CloudNativePG) · Angular · TypeScript · Playwright · kind · Istio · cert-manager
+
+## Projectstructuur
+
+```text
+banksim/
+├── doc/          functioneel en technisch ontwerp
+├── backend/      Maven multi-module: bank-domain, bank-api, bank-bff, bank-migrate, bank-datagen
+├── frontend/     Angular-app bank-web
+├── e2e/          Playwright-tests
+└── deploy/       kind-config, platformcomponenten, Helm-chart
+```
+
+## Aan de slag
+
+Vereisten: Java 21, Maven 3.9, Node 22 LTS, Docker, kind (≥ 0.31), kubectl en Helm.
+
+```bash
+make cluster    # kind-cluster "banksim" met poort 80/443 naar de host
+make platform   # cert-manager, Istio ambient, CloudNativePG, Keycloak
+make build      # backend- en frontend-images bouwen en in kind laden
+make deploy     # migraties, fake data en de applicatie installeren
+```
+
+Daarna is de applicatie bereikbaar op <https://bank.localtest.me>; Keycloak draait op <https://auth.localtest.me>. De inloggegevens van de testgebruikers staan in een Kubernetes Secret dat bij de installatie wordt gemaakt. Zie [hoofdstuk 15 van het technisch ontwerp](doc/technisch-ontwerp.md#15-deployment-op-kind) voor de installatievolgorde.
+
+## Testen
+
+```bash
+make test       # backend: unit, integratie (Testcontainers), architectuur, contract en mutation tests
+make e2e        # Playwright e2e-tests tegen de deployment in kind
+```
+
+De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).
