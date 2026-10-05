@@ -326,12 +326,13 @@ Regels:
 
 ## 9. Fake data-generator (`bank-datagen`)
 
-- Draait als Kubernetes Job (en lokaal als CLI), schrijft via bulk-insert (`COPY`) naar PostgreSQL.
+- Draait als Kubernetes Job (en lokaal als CLI), schrijft via bulk-insert (`COPY`) in één databasetransactie naar PostgreSQL. Na install/upgrade draait hij in modus `ALS_LEEG` (alleen als de database leeg is, zodat een upgrade geen data wist); `reset-data.sh` draait hem in modus `ALTIJD`.
 - **Deterministisch**: vaste seed → steeds dezelfde data. Dit is ook de basis voor de e2e-tests.
 - Maakt de 10 huishoudens met profielen en het transactiepatroon uit het FO, plus de bedrijven met geldige NL-IBAN's (mod-97-checksum, fictieve bankcode `SIMB`). Alle IBAN's die betaalbaar zijn komen in `contact`.
 - Boekt in memory via dezelfde `bank-domain`-regels als `LedgerService`: double-entry, nooit rood (bij een tekort eerst een opname van de spaarrekening of een niet-vaste uitgave overslaan), maandelijkse rente.
-- Maakt via de Keycloak Admin API (service-account-client `bank-datagen` met alleen de rol `manage-users`) 10 klanten en 1 admin aan; wachtwoorden komen uit een Kubernetes Secret dat bij installatie wordt gegenereerd, niet uit Git.
-- Controleert aan het eind de invarianten (som van alle boekingen = 0, geen negatief betaal- of spaarsaldo) en schrijft een checksum van de eindsaldi (golden master).
+- Maakt via de Keycloak Admin API (service-account-client `bank-datagen` met alleen `manage-users`, `view-users` en `view-realm`) 10 klanten en de beheerder aan, idempotent zodat hun Keycloak-id gelijk blijft; wachtwoorden komen uit een Kubernetes Secret dat bij installatie wordt gegenereerd, niet uit Git.
+- Controleert aan het eind in de database de invarianten (som van alle boekingen = 0, geen dag met een negatief betaal- of spaarsaldo). Een golden-master-test legt een checksum van de eindsaldi en het aantal overboekingen vast (seed 42: ruim 30.000 overboekingen).
+- Rekent net als het domein nooit met floating point: bedragen worden in centen getrokken (ArchUnit-regel).
 
 ## 10. Security en zero trust
 

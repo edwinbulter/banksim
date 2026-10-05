@@ -25,7 +25,7 @@ COMPONENTS=(bank-web bank-bff bank-api bank-migrate bank-datagen keycloak postgr
 
 check_prerequisites() {
   info "Vereisten controleren"
-  require kubectl helm docker kind openssl keytool curl git
+  require kubectl helm docker kind openssl keytool curl git jq
   check_context
   kc -n ingress-nginx get deployment ingress-nginx-controller >/dev/null 2>&1 \
     || fail "ingress-nginx ontbreekt in het cluster (namespace ingress-nginx)"
@@ -50,14 +50,15 @@ build_images() {
   esac
   info "Images bouwen ($tag, $platform)"
   "$REPO_ROOT/backend/mvnw" -q -B -ntp -f "$REPO_ROOT/backend/pom.xml" \
-    -pl bank-api,bank-bff,bank-migrate -am package jib:dockerBuild \
+    -pl bank-api,bank-bff,bank-migrate,bank-datagen -am package jib:dockerBuild \
     -DskipTests -Dimage.tag="$tag" -Djib.from.platforms="$platform"
   docker build -q --platform "$platform" -t "banksim/bank-web:$tag" "$REPO_ROOT/frontend" >/dev/null
   ok "Images gebouwd"
 
   info "Images laden in kind-cluster $(kind_cluster_name)"
   kind load docker-image --name "$(kind_cluster_name)" \
-    "banksim/bank-api:$tag" "banksim/bank-bff:$tag" "banksim/bank-migrate:$tag" "banksim/bank-web:$tag" >/dev/null
+    "banksim/bank-api:$tag" "banksim/bank-bff:$tag" "banksim/bank-migrate:$tag" "banksim/bank-datagen:$tag" \
+    "banksim/bank-web:$tag" >/dev/null
   ok "Images geladen"
 }
 
@@ -103,19 +104,27 @@ create_tls_secrets() {
 
 random_secret() { openssl rand -hex 24; }
 
+# Zorgt dat het Secret bestaat en elke sleutel een waarde heeft; bestaande waarden blijven ongewijzigd.
+ensure_secret_keys() {
+  local secret="$1" key
+  shift
+  if ! kc -n "$NAMESPACE" get secret "$secret" >/dev/null 2>&1; then
+    kc -n "$NAMESPACE" create secret generic "$secret" >/dev/null
+  fi
+  for key in "$@"; do
+    if ! kc -n "$NAMESPACE" get secret "$secret" -o json | jq -e --arg k "$key" '.data[$k] // empty' >/dev/null; then
+      kc -n "$NAMESPACE" patch secret "$secret" --type merge \
+        -p "{\"data\":{\"$key\":\"$(printf '%s' "$(random_secret)" | base64)\"}}" >/dev/null
+    fi
+  done
+}
+
 create_random_secrets() {
   info "Wachtwoorden en client secrets"
-  if ! kc -n "$NAMESPACE" get secret banksim-postgres >/dev/null 2>&1; then
-    apply_secret generic banksim-postgres --from-literal=superuser-password="$(random_secret)"
-  fi
-  if ! kc -n "$NAMESPACE" get secret banksim-keycloak >/dev/null 2>&1; then
-    apply_secret generic banksim-keycloak \
-      --from-literal=admin-password="$(random_secret)" \
-      --from-literal=bff-client-secret="$(random_secret)" \
-      --from-literal=datagen-client-secret="$(random_secret)" \
-      --from-literal=demo-password="$(random_secret)"
-  fi
-  ok "Secrets aanwezig (bestaande blijven ongewijzigd)"
+  ensure_secret_keys banksim-postgres superuser-password
+  ensure_secret_keys banksim-keycloak admin-password bff-client-secret datagen-client-secret \
+    klant-password beheerder-password
+  ok "Secrets aanwezig (bestaande waarden blijven ongewijzigd)"
 }
 
 certs_checksum() {
@@ -172,20 +181,20 @@ smoke_tests() {
   smoke_login
 }
 
-# Volledige OIDC-login met de demo-gebruiker via curl, daarna /api/me op alle BFF-replica's.
+# Volledige OIDC-login met klant jdevries via curl, daarna /api/me op alle BFF-replica's.
 smoke_login() {
   local password page action body i
   COOKIE_JAR="$(mktemp)"
   local jar="$COOKIE_JAR"
-  password="$(kc -n "$NAMESPACE" get secret banksim-keycloak -o jsonpath='{.data.demo-password}' | base64 -d)"
+  password="$(kc -n "$NAMESPACE" get secret banksim-keycloak -o jsonpath='{.data.klant-password}' | base64 -d)"
   page="$(curl -s -L --cacert "$CERT_DIR/ca.crt" -b "$jar" -c "$jar" "https://bank.localtest.me/oauth2/authorization/keycloak")"
   action="$(printf '%s' "$page" | sed -n 's/.*id="kc-form-login"[^>]*action="\([^"]*\)".*/\1/p' | sed 's/&amp;/\&/g')"
   [[ -n "$action" ]] || fail "Login: Keycloak-inlogformulier niet gevonden"
   curl -s -L -o /dev/null --cacert "$CERT_DIR/ca.crt" -b "$jar" -c "$jar" \
-    --data-urlencode "username=demo" --data-urlencode "password=$password" "$action"
+    --data-urlencode "username=jdevries" --data-urlencode "password=$password" "$action"
   for i in 1 2 3 4 5 6; do
     body="$(curl -s --cacert "$CERT_DIR/ca.crt" -b "$jar" "https://bank.localtest.me/api/me")"
-    [[ "$body" == *'"gebruikersnaam":"demo"'* ]] || fail "Login: /api/me gaf bij poging $i: ${body:-(leeg/redirect)}"
+    [[ "$body" == *'"naam":"Jan de Vries"'* ]] || fail "Login: /api/me gaf bij poging $i: ${body:-(leeg/redirect)}"
   done
   ok "Login via Keycloak en /api/me werken op alle BFF-replica's"
 }
@@ -196,8 +205,11 @@ summary() {
 BankSim draait op https://bank.localtest.me (Keycloak: https://auth.localtest.me).
 Laat je browser de BankSim-CA vertrouwen met: deploy/scripts/trust-ca.sh
 
-Testgebruiker 'demo', wachtwoord ophalen met:
-  kubectl --context $KUBE_CONTEXT -n $NAMESPACE get secret banksim-keycloak -o jsonpath='{.data.demo-password}' | base64 -d; echo
+Klanten: jdevries, sbakker, melamrani, ljansen, pvisser, fyilmaz, dsmit, edeboer, rmulder, nhendriks
+Beheerder: beheerder
+Wachtwoorden ophalen met:
+  kubectl --context $KUBE_CONTEXT -n $NAMESPACE get secret banksim-keycloak -o jsonpath='{.data.klant-password}' | base64 -d; echo
+  kubectl --context $KUBE_CONTEXT -n $NAMESPACE get secret banksim-keycloak -o jsonpath='{.data.beheerder-password}' | base64 -d; echo
 INFO
 }
 

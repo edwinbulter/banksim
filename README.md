@@ -2,7 +2,7 @@
 
 BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met ongeveer 5 jaar realistische transactiehistorie. Een admin kan de datum van de simulatie verzetten; alle rekeninghouders zien hun rekeningen dan alsof het die dag is.
 
-> **Status:** fase 1 van de implementatie is klaar: BankSim installeert en verwijdert met scripts in het kind-cluster, met inloggen via Keycloak, mTLS tussen alle componenten en NetworkPolicies. De bankfunctionaliteit uit het functioneel ontwerp volgt in de volgende fases.
+> **Status:** fase 1 t/m 3 van de implementatie zijn klaar: installeren en verwijderen met scripts, inloggen via Keycloak, mTLS en NetworkPolicies, het grootboek met domeinregels, en vijf jaar fake data voor tien huishoudens. De schermen en API's uit het functioneel ontwerp volgen in de volgende fases.
 
 ## Documentatie
 
@@ -91,14 +91,14 @@ deploy/scripts/uninstall.sh --purge # ook de images en de lokale CA verwijderen
 
 De scripts werken alleen op de kubectl-context `kind-single-node`, tenzij je met `--context` een andere kiest. `install.sh` kun je veilig opnieuw draaien. `make install` en `make uninstall` roepen dezelfde scripts aan.
 
-Daarna is de applicatie bereikbaar op <https://bank.localtest.me>; Keycloak draait op <https://auth.localtest.me>. De inloggegevens van de testgebruikers staan in een Kubernetes Secret dat bij de installatie wordt gemaakt; `install.sh` toont hoe je ze ophaalt. Zie [hoofdstuk 15 van het technisch ontwerp](doc/technisch-ontwerp.md#15-deployment-op-kind) voor details.
+Daarna is de applicatie bereikbaar op <https://bank.localtest.me>; Keycloak draait op <https://auth.localtest.me>. Er zijn 10 klanten (`jdevries`, `sbakker`, `melamrani`, `ljansen`, `pvisser`, `fyilmaz`, `dsmit`, `edeboer`, `rmulder`, `nhendriks`) en een `beheerder`. De wachtwoorden staan in een Kubernetes Secret dat bij de installatie wordt gemaakt; `install.sh` toont hoe je ze ophaalt. Zie [hoofdstuk 15 van het technisch ontwerp](doc/technisch-ontwerp.md#15-deployment-op-kind) voor details.
 
 ## Testen
 
 ```bash
 make test       # backend: unit, integratie (Testcontainers), architectuur, contract en mutation tests
 make e2e        # Playwright e2e-tests tegen de installatie in namespace banksim
-deploy/scripts/reset-data.sh   # testdata terugzetten naar de vaste beginstand (vanaf fase 3)
+deploy/scripts/reset-data.sh   # testdata terugzetten naar de vaste beginstand
 ```
 
 De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).

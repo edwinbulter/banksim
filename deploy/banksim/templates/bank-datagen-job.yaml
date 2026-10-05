@@ -1,0 +1,65 @@
+{{- $ctx := dict "root" . "name" "bank-datagen" }}
+# Fake data en Keycloak-gebruikers (TO §9). Na install/upgrade alleen als de database leeg is;
+# deploy/scripts/reset-data.sh past deze Job opnieuw toe met mode ALTIJD.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.datagen.jobName }}
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+  {{- if .Values.datagen.hook }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation
+  {{- end }}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "banksim.labels" $ctx | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- include "banksim.podSecurity" (dict "uid" 65532) | nindent 6 }}
+      containers:
+        - name: bank-datagen
+          image: {{ include "banksim.image" (dict "root" . "key" "datagen") }}
+          imagePullPolicy: IfNotPresent
+          env:
+            {{- include "banksim.javaTls" $ctx | nindent 12 }}
+            - name: BANKSIM_DATAGEN_MODUS
+              value: {{ .Values.datagen.mode }}
+            - name: BANKSIM_DB_HOST
+              value: postgres.{{ .Release.Namespace }}.svc
+            - name: BANKSIM_KEYCLOAK_INTERNAL_URL
+              value: https://keycloak.{{ .Release.Namespace }}.svc:8443
+            - name: BANKSIM_DATAGEN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: datagen-client-secret
+            - name: BANKSIM_KLANT_WACHTWOORD
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: klant-password
+            - name: BANKSIM_BEHEERDER_WACHTWOORD
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-keycloak
+                  key: beheerder-password
+          resources:
+            {{- toYaml .Values.resources.datagen | nindent 12 }}
+          {{- include "banksim.containerSecurity" dict | nindent 10 }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/banksim/tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- include "banksim.tlsVolume" $ctx | nindent 8 }}
+        - name: tmp
+          emptyDir: {}

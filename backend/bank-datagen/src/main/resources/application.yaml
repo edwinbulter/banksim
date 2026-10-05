@@ -3,3 +3,26 @@ spring:
     name: bank-datagen
   main:
     web-application-type: none
+  datasource:
+    # Authenticatie met clientcertificaat (CN bank-datagen → databasegebruiker bank_datagen).
+    url: >-
+      jdbc:postgresql://${BANKSIM_DB_HOST:postgres.banksim.svc}:5432/bank?sslmode=verify-full&sslrootcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/ca.crt&sslcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.crt&sslkey=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.pk8
+    username: bank_datagen
+    hikari:
+      connection-timeout: 10000
+
+banksim:
+  datagen:
+    uitvoeren: true
+    modus: ${BANKSIM_DATAGEN_MODUS:ALS_LEEG}
+    seed: 42
+    vanaf: 2021-10-01
+    tot: 2026-12-31
+    klant-wachtwoord: ${BANKSIM_KLANT_WACHTWOORD}
+    beheerder: beheerder
+    beheerder-wachtwoord: ${BANKSIM_BEHEERDER_WACHTWOORD}
+    keycloak:
+      internal-url: ${BANKSIM_KEYCLOAK_INTERNAL_URL:https://keycloak.banksim.svc:8443}
+      realm: banksim
+      client-id: bank-datagen
+      client-secret: ${BANKSIM_DATAGEN_CLIENT_SECRET}

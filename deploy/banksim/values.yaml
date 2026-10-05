@@ -6,6 +6,7 @@ images:
   api: banksim/bank-api
   bff: banksim/bank-bff
   migrate: banksim/bank-migrate
+  datagen: banksim/bank-datagen
   web: banksim/bank-web
   keycloak: quay.io/keycloak/keycloak:26.8.0
   postgres: postgres:18.6-alpine
@@ -41,6 +42,9 @@ resources:
   migrate:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 384Mi }
+  datagen:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { memory: 1Gi }
   keycloak:
     requests: { cpu: 250m, memory: 768Mi }
     limits: { memory: 1536Mi }
@@ -52,6 +56,9 @@ postgres:
   storageClass: standard
   storage: 2Gi
 
-keycloak:
-  # Testgebruiker voor fase 1; de echte klanten maakt bank-datagen aan.
-  demoUser: demo
+datagen:
+  # ALS_LEEG: alleen data maken als de database leeg is (install/upgrade). reset-data.sh gebruikt ALTIJD.
+  mode: ALS_LEEG
+  jobName: bank-datagen
+  # Bij reset-data.sh wordt de Job zonder Helm-hook toegepast.
+  hook: true

@@ -82,20 +82,8 @@
       "enabled": true,
       "serviceAccountClientId": "bank-datagen",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users"]
+        "realm-management": ["manage-users", "view-users", "view-realm"]
       }
-    },
-    {
-      "username": "{{ .Values.keycloak.demoUser }}",
-      "enabled": true,
-      "firstName": "Demo",
-      "lastName": "Klant",
-      "email": "{{ .Values.keycloak.demoUser }}@banksim.local",
-      "emailVerified": true,
-      "realmRoles": ["klant"],
-      "credentials": [
-        { "type": "password", "value": "${DEMO_PASSWORD}", "temporary": false }
-      ]
     }
   ]
 }

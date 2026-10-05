@@ -107,11 +107,6 @@ spec:
                 secretKeyRef:
                   name: banksim-keycloak
                   key: datagen-client-secret
-            - name: DEMO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: banksim-keycloak
-                  key: demo-password
             - name: JAVA_OPTS_KC_HEAP
               value: -XX:MaxRAMPercentage=70
           ports:
