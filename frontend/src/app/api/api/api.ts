@@ -1,0 +1,13 @@
+export * from './admin.api';
+import { AdminApi } from './admin.api';
+export * from './betalingen.api';
+import { BetalingenApi } from './betalingen.api';
+export * from './contacten.api';
+import { ContactenApi } from './contacten.api';
+export * from './me.api';
+import { MeApi } from './me.api';
+export * from './rekeningen.api';
+import { RekeningenApi } from './rekeningen.api';
+export * from './transacties.api';
+import { TransactiesApi } from './transacties.api';
+export const APIS = [AdminApi, BetalingenApi, ContactenApi, MeApi, RekeningenApi, TransactiesApi];

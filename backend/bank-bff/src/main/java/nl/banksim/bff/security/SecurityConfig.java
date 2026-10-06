@@ -1,0 +1,76 @@
+package nl.banksim.bff.security;
+
+import nl.banksim.bff.BffProperties;
+
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+
+@Configuration
+class SecurityConfig {
+
+    static final String LOGIN_PATH = "/oauth2/authorization/" + KeycloakClientRegistration.REGISTRATION_ID;
+
+    /** Alleen het health-endpoint is blootgesteld, op de aparte management-poort voor de kubelet-probes. */
+    @Bean
+    @Order(1)
+    SecurityFilterChain managementSecurity(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher(EndpointRequest.toAnyEndpoint())
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .csrf(csrf -> csrf.disable());
+        return http.build();
+    }
+
+    @Bean
+    SecurityFilterChain bffSecurity(HttpSecurity http, ClientRegistrationRepository registrations,
+                                    BffProperties properties) throws Exception {
+        var authorizationRequestResolver = new DefaultOAuth2AuthorizationRequestResolver(
+                registrations, "/oauth2/authorization");
+        authorizationRequestResolver.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
+
+        var logoutSuccessHandler = new OidcClientInitiatedLogoutSuccessHandler(registrations);
+        logoutSuccessHandler.setPostLogoutRedirectUri(properties.publicUrl() + "/");
+
+        http
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/oauth2/**", "/login/**", "/bff/fallback/**").permitAll()
+                        .requestMatchers("/api/**", "/logout").authenticated()
+                        .anyRequest().denyAll())
+                .oauth2Login(login -> login
+                        .loginPage(LOGIN_PATH)
+                        .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(authorizationRequestResolver))
+                        .userInfoEndpoint(userInfo -> userInfo.userAuthoritiesMapper(new Rollen()))
+                        .successHandler(new StartpaginaNaLogin(properties.publicUrl().toString())))
+                // De Angular-app krijgt 401 en stuurt de browser zelf naar de login.
+                .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
+                        new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                        PathPatternRequestMatcher.pathPattern("/api/**")))
+                .logout(logout -> logout.logoutSuccessHandler(logoutSuccessHandler))
+                // XSRF-TOKEN-cookie + X-XSRF-TOKEN-header (Angular HttpClient) of _csrf-parameter (uitlogformulier),
+                // beide met het ruwe token. Maskeren tegen BREACH is niet nodig: het token komt nooit in HTML.
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+                .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
+                // De BFF levert alleen JSON en redirects; de pagina's komen van bank-web (TO §10.4).
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+                        .referrerPolicy(referrer -> referrer.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER)));
+        return http.build();
+    }
+}

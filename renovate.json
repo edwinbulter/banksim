@@ -1,0 +1,91 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommitsDisabled"
+  ],
+  "description": "Houdt dependencies, base images (op digest) en GitHub Actions bij (TO §16).",
+  "timezone": "Europe/Amsterdam",
+  "schedule": ["before 7am on monday"],
+  "prConcurrentLimit": 5,
+  "commitMessagePrefix": "[deps]",
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["security"]
+  },
+  "packageRules": [
+    {
+      "description": "Spring Cloud ondersteunt Spring Boot 4.1 nog niet; alleen patches van 4.0.x",
+      "matchPackageNames": ["org.springframework.boot:spring-boot-starter-parent"],
+      "allowedVersions": "/^4\\.0\\./"
+    },
+    {
+      "description": "Spring-dependencies samen bijwerken",
+      "matchPackageNames": ["org.springframework.**"],
+      "groupName": "spring"
+    },
+    {
+      "description": "Angular-pakketten samen bijwerken",
+      "matchPackageNames": ["@angular/**", "@angular-devkit/**", "@schematics/angular", "angular-eslint", "@angular-eslint/**"],
+      "groupName": "angular"
+    },
+    {
+      "description": "Playwright-pakket en browsers in één keer",
+      "matchPackageNames": ["@playwright/test"],
+      "groupName": "playwright"
+    },
+    {
+      "description": "Testcontainer-images volgen dezelfde versie als de chart",
+      "matchPackageNames": ["postgres", "quay.io/keycloak/keycloak"],
+      "groupName": "{{packageName}}"
+    },
+    {
+      "description": "Digest-updates van base images samen, wekelijks",
+      "matchUpdateTypes": ["digest", "pinDigest"],
+      "groupName": "base image digests"
+    },
+    {
+      "description": "Engines-veld van Node niet automatisch aanpassen",
+      "matchDepTypes": ["engines"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Images in values.yaml, pom.xml, scripts en tests (image:tag@sha256:digest of image:tag)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^deploy/banksim/values\\.yaml$/",
+        "/^backend/pom\\.xml$/",
+        "/^deploy/scripts/install\\.sh$/",
+        "/^scripts/scan-images\\.sh$/",
+        "/^backend/.+/src/test/java/.+\\.java$/"
+      ],
+      "matchStrings": [
+        "(?<depName>(?:quay\\.io/keycloak/keycloak|postgres|gcr\\.io/distroless/java21-debian13|curlimages/curl|aquasec/trivy)):(?<currentValue>[\\w.-]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "ingress-nginx in de CI-workflow, gelijk houden met het cluster single-node",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["ingress-nginx/controller-(?<currentValue>v[\\d.]+)/"],
+      "depNameTemplate": "kubernetes/ingress-nginx",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^controller-(?<version>v.+)$",
+      "enabled": false
+    },
+    {
+      "description": "Versie van cyclonedx-npm in de CI-workflow",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["@cyclonedx/cyclonedx-npm@(?<currentValue>[\\d.]+)"],
+      "depNameTemplate": "@cyclonedx/cyclonedx-npm",
+      "datasourceTemplate": "npm"
+    }
+  ]
+}

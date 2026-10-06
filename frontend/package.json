@@ -1,0 +1,55 @@
+{
+  "name": "bank-web",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test --watch=false",
+    "lint": "ng lint",
+    "generate:api": "openapi-generator-cli generate -i ../backend/bank-api/src/main/resources/openapi.yaml -g typescript-angular -o src/app/api --additional-properties=ngVersion=21.0.0,providedIn=root,stringEnums=true,supportsES6=true,useSingleRequestParameter=true,serviceSuffix=Api,serviceFileSuffix=.api,modelFileSuffix=,fileNaming=kebab-case,enumPropertyNaming=original"
+  },
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "dependencies": {
+    "@angular/common": "^22.2.0",
+    "@angular/compiler": "^22.2.0",
+    "@angular/core": "^22.2.0",
+    "@angular/forms": "^22.2.0",
+    "@angular/platform-browser": "^22.2.0",
+    "@angular/router": "^22.2.0",
+    "big.js": "^7.0.1",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.2.1",
+    "@angular/cli": "^22.2.1",
+    "@angular/compiler-cli": "^22.2.0",
+    "@eslint/js": "^10.0.1",
+    "@openapitools/openapi-generator-cli": "2.41.0",
+    "@types/big.js": "^7.0.0",
+    "angular-eslint": "22.5.0",
+    "eslint": "^10.9.1",
+    "jsdom": "^30.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "8.69.0",
+    "vitest": "^5.0.0"
+  },
+  "allowScripts": {
+    "@parcel/watcher": false,
+    "esbuild": false,
+    "fsevents": false,
+    "lmdb": false,
+    "msgpackr-extract": false,
+    "@openapitools/openapi-generator-cli": false
+  },
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0"
+  },
+  "overrides": {
+    "basic-ftp": "6.2.2"
+  }
+}

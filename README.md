@@ -2,12 +2,13 @@
 
 BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met ongeveer 5 jaar realistische transactiehistorie. Een admin kan de datum van de simulatie verzetten; alle rekeninghouders zien hun rekeningen dan alsof het die dag is.
 
-> **Status:** ontwerpfase. Het functioneel en technisch ontwerp zijn klaar; de code moet nog gebouwd worden. De instructies onder [Aan de slag](#aan-de-slag) beschrijven hoe het volgens het ontwerp gaat werken.
+> **Status:** alle fases uit het implementatieplan zijn klaar: alle schermen en API's uit het functioneel ontwerp werken, met inloggen via Keycloak, mTLS, NetworkPolicies, een versleutelde BFF-sessie, rate limiting en vijf jaar fake data. Een Playwright-suite test alle scenario's in Chromium, Firefox en WebKit, en de CI-pipeline controleert contract, dependencies en images.
 
 ## Documentatie
 
 | Document | Inhoud |
 | --- | --- |
+| [Handleiding](doc/banksim-handleiding.md) | Stap voor stap installeren, inloggen als klant of beheerder en alle schermen gebruiken |
 | [Functioneel ontwerp](doc/functioneel-ontwerp.md) | Schermen met schetsen, functionaliteit, validaties, fake data en beantwoorde open punten |
 | [Technisch ontwerp](doc/technisch-ontwerp.md) | Architectuur, API, datamodel, security, OWASP Top 10:2025, resilience, teststrategie en deployment |
 
@@ -26,13 +27,21 @@ Zie het [functioneel ontwerp](doc/functioneel-ontwerp.md) voor de schermen en re
 
 ```mermaid
 flowchart LR
-    Browser["Browser<br/>Angular bank-web"] -->|HTTPS| GW["Istio Gateway"]
-    GW --> WEB["bank-web<br/>nginx"]
-    GW --> BFF["bank-bff<br/>Spring Cloud Gateway"]
-    GW --> KC["Keycloak"]
-    BFF -->|JWT| API["bank-api<br/>Spring Boot"]
-    API --> PG[("PostgreSQL")]
+    Browser["Browser<br/>Angular bank-web"] -->|HTTPS| GW["ingress-nginx<br/>(bestaand)"]
+    subgraph ns["namespace banksim · mTLS tussen alle componenten"]
+        WEB["bank-web<br/>nginx"]
+        BFF["bank-bff<br/>Spring Cloud Gateway"]
+        API["bank-api<br/>Spring Boot"]
+        KC["Keycloak"]
+        PG[("PostgreSQL")]
+    end
+    GW --> WEB
+    GW --> BFF
+    GW --> KC
+    BFF -->|JWT| API
+    API --> PG
     BFF --> PG
+    KC --> PG
 ```
 
 | Component | Rol |
@@ -42,20 +51,20 @@ flowchart LR
 | `bank-api` | Businesslogica, grootboek en autorisatie; valideert elk JWT zelf |
 | `bank-migrate` | Flyway-migraties als Kubernetes Job |
 | `bank-datagen` | Generator van de fake data en Keycloak-gebruikers |
-| Keycloak | Gebruikers, rollen `klant` en `admin` |
-| PostgreSQL | Grootboek, contacten, sessies, audit log |
+| Keycloak | Gebruikers, rollen `klant` en `admin` (officiële image, in `banksim`) |
+| PostgreSQL | Grootboek, contacten, sessies, audit log en Keycloak-database (officiële image, in `banksim`) |
 
 Belangrijkste principes (details in het [technisch ontwerp](doc/technisch-ontwerp.md)):
 
 - **Atomaire overboekingen**: elke geldbeweging gaat via één `LedgerService`; af- en bijschrijving in dezelfde databasetransactie (hoofdstuk 6).
 - **BigDecimal**: bedragen zijn overal `BigDecimal`, `NUMERIC(19,2)` en in JSON een string; in de frontend `big.js` (hoofdstuk 5).
-- **Zero trust**: BFF met OIDC, JWT-validatie in de API, mTLS tussen alle pods (Istio ambient), default-deny NetworkPolicies (hoofdstuk 10).
+- **Zero trust**: BFF met OIDC, JWT-validatie in de API, mTLS in de applicaties met een eigen BankSim-CA (elke service controleert wie haar aanroept), default-deny NetworkPolicies (hoofdstuk 10).
 - **OWASP Top 10:2025**: maatregelen per categorie A01–A10 (hoofdstuk 11).
 - **Resilience**: start zonder database of Keycloak, timeouts, circuit breakers, idempotente betalingen (hoofdstuk 12).
 
 ## Techstack
 
-Java 21 · Spring Boot · Spring Cloud Gateway · Keycloak · PostgreSQL (CloudNativePG) · Angular · TypeScript · Playwright · kind · Istio · cert-manager
+Java 21 · Spring Boot · Spring Cloud Gateway · Keycloak · PostgreSQL · Angular · TypeScript · Playwright · kind (OrbStack) · ingress-nginx · Helm
 
 ## Projectstructuur
 
@@ -65,27 +74,78 @@ banksim/
 ├── backend/      Maven multi-module: bank-domain, bank-api, bank-bff, bank-migrate, bank-datagen
 ├── frontend/     Angular-app bank-web
 ├── e2e/          Playwright-tests
-└── deploy/       kind-config, platformcomponenten, Helm-chart
+├── deploy/       install- en uninstall-scripts, Helm-chart
+├── scripts/      contractcheck, client-check en Trivy-scan (lokaal en in CI)
+└── .github/      CI-workflow en kind-configuratie voor de e2e-tests
 ```
 
 ## Aan de slag
 
-Vereisten: Java 21, Maven 3.9, Node 22 LTS, Docker, kind (≥ 0.31), kubectl en Helm.
+BankSim wordt geïnstalleerd in een eigen namespace `banksim` in het bestaande kind-cluster `single-node` (OrbStack). Keycloak en PostgreSQL draaien in dezelfde namespace; buiten de namespace wordt niets geïnstalleerd. Het cluster moet ingress-nginx hebben op poort 80/443.
+
+Vereisten: Java 21, Node 24 (of 22.22.3+), OrbStack (of Docker), kind (≥ 0.31), kubectl, Helm 4, openssl en jq. Maven zit in de wrapper (`backend/mvnw`).
 
 ```bash
-make cluster    # kind-cluster "banksim" met poort 80/443 naar de host
-make platform   # cert-manager, Istio ambient, CloudNativePG, Keycloak
-make build      # backend- en frontend-images bouwen en in kind laden
-make deploy     # migraties, fake data en de applicatie installeren
+deploy/scripts/install.sh           # images bouwen, certificaten en secrets maken, alles installeren
+deploy/scripts/trust-ca.sh          # optioneel: BankSim-CA vertrouwen in de macOS-sleutelhanger
+deploy/scripts/uninstall.sh         # namespace banksim met alle data verwijderen
+deploy/scripts/uninstall.sh --purge # ook de images en de lokale CA verwijderen
 ```
 
-Daarna is de applicatie bereikbaar op <https://bank.localtest.me>; Keycloak draait op <https://auth.localtest.me>. De inloggegevens van de testgebruikers staan in een Kubernetes Secret dat bij de installatie wordt gemaakt. Zie [hoofdstuk 15 van het technisch ontwerp](doc/technisch-ontwerp.md#15-deployment-op-kind) voor de installatievolgorde.
+Stap voor stap, met schermafbeeldingen: zie de [handleiding](doc/banksim-handleiding.md).
+
+De scripts werken alleen op de kubectl-context `kind-single-node`, tenzij je met `--context` een andere kiest. `install.sh` kun je veilig opnieuw draaien. `make install` en `make uninstall` roepen dezelfde scripts aan.
+
+Daarna is de applicatie bereikbaar op <https://bank.localtest.me>; Keycloak draait op <https://auth.localtest.me>. Er zijn 10 klanten (`jdevries`, `sbakker`, `melamrani`, `ljansen`, `pvisser`, `fyilmaz`, `dsmit`, `edeboer`, `rmulder`, `nhendriks`) en een `beheerder`. De wachtwoorden staan in een Kubernetes Secret dat bij de installatie wordt gemaakt; `install.sh` toont hoe je ze ophaalt. Zie [hoofdstuk 15 van het technisch ontwerp](doc/technisch-ontwerp.md#15-deployment-op-kind) voor details.
 
 ## Testen
 
 ```bash
 make test       # backend: unit, integratie (Testcontainers), architectuur, contract en mutation tests
-make e2e        # Playwright e2e-tests tegen de deployment in kind
+deploy/scripts/install.sh --e2e   # installeren met een ruimere login-limiet voor de e2e-suite
+make e2e-install                  # eenmalig: Playwright en browsers
+make e2e        # Playwright e2e-tests tegen de installatie in namespace banksim
+deploy/scripts/reset-data.sh   # testdata terugzetten naar de vaste beginstand
 ```
 
-De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).
+De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp; ze zetten de testdata zelf terug en halen de wachtwoorden uit het Secret. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).
+
+## Supply chain en CI
+
+```bash
+make check             # openapi.yaml achterwaarts compatibel met origin/main; Angular-client actueel
+make audit             # npm audit van frontend en e2e
+make sbom              # CycloneDX-SBOM's van backend en frontend
+make dependency-check  # OWASP Dependency-Check (zet NVD_API_KEY)
+make scan              # Trivy-scan en SBOM per image van de geïnstalleerde release
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) draait dit allemaal bij elke push en pull request, en wekelijks: backend- en frontendtests, contractcheck, Dependency-Check, en in een tijdelijk kind-cluster de installatie, de Trivy-scan en de Playwright-suite. Images en Actions staan op digest of commit vast; Renovate houdt ze bij. Zie [hoofdstuk 16 van het technisch ontwerp](doc/technisch-ontwerp.md#16-build-en-ci).
+
+### Eenmalige inrichting op GitHub
+
+Twee onderdelen werken pas na een handmatige stap in GitHub. Zonder deze stappen blijft de pipeline groen, maar ontbreken twee controles.
+
+**1. NVD API-sleutel voor Dependency-Check**
+
+*Waarom:* OWASP Dependency-Check vergelijkt de Java-dependencies met de kwetsbaarhedendatabase van het NIST (NVD). Zonder API-sleutel beperkt de NVD het aantal verzoeken zo sterk dat de eerste download van de database uren duurt. De CI-job slaat de controle daarom over (met een waarschuwing) zolang er geen sleutel is; dan controleert alleen Trivy de images.
+
+*Hoe:*
+
+1. Vraag een gratis sleutel aan op <https://nvd.nist.gov/developers/request-an-api-key>; je krijgt een activatielink per e-mail.
+2. Voeg hem in GitHub toe als repository-secret: *Settings → Secrets and variables → Actions → New repository secret*, naam `NVD_API_KEY`.
+3. Lokaal: `export NVD_API_KEY=…` en dan `make dependency-check`.
+
+De eerste run met sleutel downloadt de volledige database (10–20 minuten); daarna komt die uit de cache en worden alleen wijzigingen opgehaald. De job faalt bij een kwetsbaarheid met CVSS 7 of hoger. Een terechte uitzondering zet je in `backend/dependency-check-suppressions.xml`, met reden en einddatum.
+
+**2. Renovate voor automatische updates**
+
+*Waarom:* versies van dependencies, base images (op digest) en GitHub Actions staan bewust vast, zodat een build reproduceerbaar is en niet ongemerkt een gewijzigd image binnenhaalt. Daardoor komen beveiligingsfixes ook niet vanzelf binnen. Renovate opent voor elke update een pull request, waarop de volledige pipeline draait, zodat je een update pas merget als alle tests groen zijn.
+
+*Hoe:*
+
+1. Installeer de [Renovate GitHub App](https://github.com/apps/renovate) en geef hem alleen toegang tot deze repository.
+2. Renovate leest `renovate.json` en opent eerst een onboarding-PR met een overzicht van wat hij gevonden heeft; merge die.
+3. Daarna: elke maandagochtend update-PR's (gegroepeerd, maximaal 5 tegelijk), en bij een bekende kwetsbaarheid direct een PR met het label `security`. Een *Dependency Dashboard*-issue toont alles wat openstaat.
+
+Zonder de app doet `renovate.json` niets.

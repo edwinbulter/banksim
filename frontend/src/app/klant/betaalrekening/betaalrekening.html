@@ -1,0 +1,35 @@
+<p class="terug">
+  @if (sessie.isAdmin()) {
+    <button type="button" class="link" (click)="terug()">‹ Terug</button>
+  } @else {
+    <a routerLink="/">‹ Overzicht</a>
+  }
+</p>
+<app-fout-melding [fout]="fout()" (opnieuw)="laad()" />
+
+@if (bevestiging(); as tekst) {
+  <div class="melding melding--succes" role="status">{{ tekst }}</div>
+}
+
+@if (rekening(); as r) {
+  <header class="rekening-kop">
+    <h1>{{ r.rekeninghouder }}</h1>
+    <p class="rekening-kop__iban">{{ ibanTekst(r.iban) }}</p>
+    <p class="rekening-kop__saldo">Saldo <span class="bedrag">{{ r.saldo | bedrag: 'valuta' }}</span></p>
+  </header>
+
+  <div class="knoppen knoppen--links">
+    @if (!r.alleenLezen) {
+      <a class="knop" [routerLink]="['/betalen', r.iban]">Betalen</a>
+    }
+    <button type="button" class="knop knop--secundair" [attr.aria-expanded]="zoekenOpen()" (click)="wisselZoeken()">
+      {{ zoekenOpen() ? 'Verberg zoeken' : 'Zoeken in transacties' }}
+    </button>
+  </div>
+
+  @if (zoekenOpen()) {
+    <app-zoek-formulier (zoek)="zoek($event)" (wis)="wis()" />
+  }
+
+  <app-transactie-lijst [iban]="r.iban" [soort]="Soort.BETAAL" [criteria]="criteria()" />
+}

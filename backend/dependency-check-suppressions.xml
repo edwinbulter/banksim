@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Onderdrukte meldingen van OWASP Dependency-Check. Elke regel heeft een reden en een einddatum
+  (until), zodat een onderdrukking niet stil blijft staan.
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+</suppressions>

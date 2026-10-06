@@ -1,0 +1,150 @@
+{{- $ctx := dict "root" . "name" "postgres" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+data:
+  # Alleen TLS met clientcertificaat; de CN bepaalt de databasegebruiker (pg_ident). Geen wachtwoorden.
+  pg_hba.conf: |
+    local    all       postgres                                                      peer
+    hostssl  bank      bank_migrate,bank_app,bank_bff,bank_datagen  all  cert map=banksim
+    hostssl  keycloak  keycloak                                     all  cert map=banksim
+  pg_ident.conf: |
+    banksim  bank-migrate  bank_migrate
+    banksim  bank-api      bank_app
+    banksim  bank-bff      bank_bff
+    banksim  bank-datagen  bank_datagen
+    banksim  keycloak      keycloak
+  init.sql: |
+    CREATE ROLE bank_migrate LOGIN;
+    CREATE ROLE bank_app LOGIN;
+    CREATE ROLE bank_bff LOGIN;
+    CREATE ROLE bank_datagen LOGIN;
+    CREATE ROLE keycloak LOGIN;
+    CREATE DATABASE bank OWNER bank_migrate;
+    CREATE DATABASE keycloak OWNER keycloak;
+    REVOKE ALL ON DATABASE bank FROM PUBLIC;
+    REVOKE ALL ON DATABASE keycloak FROM PUBLIC;
+    GRANT CONNECT ON DATABASE bank TO bank_app, bank_bff, bank_datagen;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "banksim.selector" $ctx | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "banksim.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "banksim.labels" $ctx | nindent 8 }}
+      {{- include "banksim.podAnnotations" . | nindent 6 }}
+    spec:
+      {{- include "banksim.podSecurity" (dict "uid" 70) | nindent 6 }}
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_min_protocol_version=TLSv1.3
+            - -c
+            - ssl_cert_file=/etc/banksim/tls/tls.crt
+            - -c
+            - ssl_key_file=/etc/banksim/tls/tls.key
+            - -c
+            - ssl_ca_file=/etc/banksim/tls/ca.crt
+            - -c
+            - hba_file=/etc/postgres/pg_hba.conf
+            - -c
+            - ident_file=/etc/postgres/pg_ident.conf
+            - -c
+            - log_connections=on
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-postgres
+                  key: superuser-password
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "/var/run/postgresql", "-U", "postgres"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "/var/run/postgresql", "-U", "postgres"]
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.postgres | nindent 12 }}
+          {{- include "banksim.containerSecurity" dict | nindent 10 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+            - name: tls
+              mountPath: /etc/banksim/tls
+              readOnly: true
+            - name: config
+              mountPath: /etc/postgres
+              readOnly: true
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- include "banksim.tlsVolume" (dict "name" "postgres" "mode" 0440) | nindent 8 }}
+        - name: config
+          configMap:
+            name: postgres-config
+            items:
+              - { key: pg_hba.conf, path: pg_hba.conf }
+              - { key: pg_ident.conf, path: pg_ident.conf }
+        - name: init
+          configMap:
+            name: postgres-config
+            items:
+              - { key: init.sql, path: init.sql }
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.postgres.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage }}

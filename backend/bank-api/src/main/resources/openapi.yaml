@@ -1,0 +1,470 @@
+openapi: 3.1.0
+info:
+  title: BankSim API
+  version: 1.0.0
+  description: |
+    API van bank-api (technisch ontwerp §3.2). Wordt alleen via bank-bff aangeroepen, met het access token
+    van de gebruiker. Bedragen zijn strings met precies twee decimalen (bijvoorbeeld "-63.48") om
+    afrondingsfouten te voorkomen; negatief is een afschrijving. Fouten volgen RFC 9457 (ProblemDetail).
+servers:
+  - url: /
+tags:
+  - name: me
+  - name: rekeningen
+  - name: transacties
+  - name: contacten
+  - name: betalingen
+  - name: admin
+security:
+  - bearer: []
+
+paths:
+  /api/me:
+    get:
+      tags: [me]
+      operationId: getMe
+      summary: Ingelogde gebruiker
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Gebruiker' }
+        '401': { $ref: '#/components/responses/Problem' }
+
+  /api/me/accounts:
+    get:
+      tags: [me]
+      operationId: getMijnRekeningen
+      summary: Rekeningen van de ingelogde klant met saldo op de simulatiedatum (Overzicht)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RekeningOverzicht' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /api/accounts/{iban}:
+    get:
+      tags: [rekeningen]
+      operationId: getRekening
+      summary: Kop van het Betaalrekening- of Spaarrekening-scherm
+      parameters:
+        - $ref: '#/components/parameters/Iban'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RekeningDetail' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /api/accounts/{iban}/transactions:
+    get:
+      tags: [transacties]
+      operationId: getTransacties
+      summary: Af- en bijschrijvingen t/m de simulatiedatum, nieuwste eerst, per 50 (Toon meer)
+      parameters:
+        - $ref: '#/components/parameters/Iban'
+        - name: cursor
+          in: query
+          description: nextCursor uit het vorige antwoord
+          schema: { type: string, maxLength: 512 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+        - name: q
+          in: query
+          description: Zoekt in naam, bedrag, IBAN en omschrijving
+          schema: { type: string, maxLength: 140 }
+        - name: min
+          in: query
+          description: Bedrag van (inclusief, absolute waarde)
+          schema: { $ref: '#/components/schemas/Bedrag' }
+        - name: max
+          in: query
+          description: Bedrag t/m (inclusief, absolute waarde)
+          schema: { $ref: '#/components/schemas/Bedrag' }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/TransactieType' }
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [ALL, OUT, IN]
+            default: ALL
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactiePagina' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /api/contacts:
+    get:
+      tags: [contacten]
+      operationId: getContacten
+      summary: Suggesties voor het Betalen-scherm (maximaal 10)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 70 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Contact' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /api/payments:
+    post:
+      tags: [betalingen]
+      operationId: betaal
+      summary: Betaling naar een bekend contact
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BetaalOpdracht' }
+      responses:
+        '201':
+          description: Geboekt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Boekingsbevestiging' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /api/transfers:
+    post:
+      tags: [betalingen]
+      operationId: schrijfOver
+      summary: Overschrijven tussen eigen betaal- en spaarrekening (Inleggen/Opnemen)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OverschrijfOpdracht' }
+      responses:
+        '201':
+          description: Geboekt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Boekingsbevestiging' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /api/admin/simulation-date:
+    get:
+      tags: [admin]
+      operationId: getSimulatiedatum
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Simulatiedatum' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [admin]
+      operationId: zetSimulatiedatum
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SimulatiedatumWijziging' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Simulatiedatum' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /api/admin/holders:
+    get:
+      tags: [admin]
+      operationId: getRekeninghouders
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 70 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RekeninghouderSamenvatting' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /api/admin/holders/{id}/accounts:
+    get:
+      tags: [admin]
+      operationId: getRekeningenVanRekeninghouder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RekeningOverzicht' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Iban:
+      name: iban
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Iban' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Unieke sleutel per formulierverzending; herhalen levert dezelfde boeking op
+      schema: { type: string, format: uuid }
+
+  responses:
+    Problem:
+      description: Fout volgens RFC 9457
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Bedrag:
+      type: string
+      description: Bedrag in euro's met maximaal 2 decimalen; punt als decimaalteken
+      pattern: '^-?[0-9]{1,13}(\.[0-9]{1,2})?$'
+      maxLength: 17
+      example: '-63.48'
+    Iban:
+      type: string
+      minLength: 15
+      maxLength: 34
+      pattern: '^[A-Za-z0-9 ]+$'
+      example: NL13SIMB0000100011
+    TransactieType:
+      type: string
+      enum: [ONLINE_BANKIEREN, IDEAL_WERO, BETAALAUTOMAAT, INCASSO, GELDAUTOMAAT, OVERSCHRIJVING,
+             VERZAMELBETALING, INLEG, OPNAME, RENTE]
+    RekeningSoort:
+      type: string
+      enum: [BETAAL, SPAAR]
+
+    Gebruiker:
+      type: object
+      required: [naam, gebruikersnaam, rollen]
+      properties:
+        naam: { type: string }
+        gebruikersnaam: { type: string }
+        rollen:
+          type: array
+          items: { type: string }
+
+    RekeningOverzicht:
+      type: object
+      required: [simulatiedatum, rekeningen]
+      properties:
+        simulatiedatum: { type: string, format: date }
+        rekeninghouder: { type: string }
+        rekeningen:
+          type: array
+          items: { $ref: '#/components/schemas/RekeningSamenvatting' }
+
+    RekeningSamenvatting:
+      type: object
+      required: [iban, soort, saldo]
+      properties:
+        iban: { $ref: '#/components/schemas/Iban' }
+        soort: { $ref: '#/components/schemas/RekeningSoort' }
+        saldo: { $ref: '#/components/schemas/Bedrag' }
+
+    RekeningDetail:
+      type: object
+      required: [iban, soort, rekeninghouder, saldo, simulatiedatum, alleenLezen]
+      properties:
+        iban: { $ref: '#/components/schemas/Iban' }
+        soort: { $ref: '#/components/schemas/RekeningSoort' }
+        rekeninghouder: { type: string }
+        saldo: { $ref: '#/components/schemas/Bedrag' }
+        simulatiedatum: { type: string, format: date }
+        lopendeRente:
+          description: Spaarrekening - opgebouwde, nog niet bijgeschreven rente deze maand
+          allOf: [{ $ref: '#/components/schemas/Bedrag' }]
+        rentepercentage:
+          type: string
+          example: '3.00'
+        gekoppeldeRekening:
+          description: De andere rekening van dezelfde klant (voor Inleggen/Opnemen)
+          allOf: [{ $ref: '#/components/schemas/Iban' }]
+        alleenLezen:
+          type: boolean
+          description: true voor de beheerder - Betalen, Inleggen en Opnemen verbergen
+
+    TransactiePagina:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Transactie' }
+        nextCursor:
+          type: string
+          description: Leeg als er niets meer is
+
+    Partij:
+      type: object
+      required: [naam]
+      properties:
+        naam: { type: string }
+        iban:
+          description: Ontbreekt bij betaalautomaat en geldautomaat
+          allOf: [{ $ref: '#/components/schemas/Iban' }]
+
+    Transactie:
+      type: object
+      required: [id, datum, tijdstip, uitgevoerdOp, tegenNaam, bedrag, type, typeLabel, rekeninghouder, van, naar]
+      properties:
+        id: { type: string, format: uuid }
+        datum: { type: string, format: date }
+        tijdstip: { type: string, format: date-time }
+        uitgevoerdOp: { type: string, format: date }
+        tegenNaam: { type: string }
+        tegenIban: { $ref: '#/components/schemas/Iban' }
+        bedrag: { $ref: '#/components/schemas/Bedrag' }
+        type: { $ref: '#/components/schemas/TransactieType' }
+        typeLabel:
+          type: string
+          example: iDEAL | Wero
+        rekeninghouder: { type: string }
+        van: { $ref: '#/components/schemas/Partij' }
+        naar: { $ref: '#/components/schemas/Partij' }
+        omschrijving: { type: string }
+        betalingskenmerk: { type: string }
+        extraOmschrijving: { type: string }
+
+    Contact:
+      type: object
+      required: [iban, naam]
+      properties:
+        iban: { $ref: '#/components/schemas/Iban' }
+        naam: { type: string }
+
+    BetaalOpdracht:
+      type: object
+      required: [vanIban, bedrag, naamOntvanger, ibanOntvanger]
+      properties:
+        vanIban: { $ref: '#/components/schemas/Iban' }
+        bedrag: { $ref: '#/components/schemas/Bedrag' }
+        naamOntvanger: { type: string, minLength: 1, maxLength: 70 }
+        ibanOntvanger: { type: string, minLength: 1, maxLength: 34 }
+        omschrijving: { type: string, maxLength: 140 }
+        betalingskenmerk: { type: string, maxLength: 25 }
+        extraOmschrijving: { type: string, maxLength: 35 }
+
+    OverschrijfOpdracht:
+      type: object
+      required: [vanIban, naarIban, bedrag]
+      properties:
+        vanIban: { $ref: '#/components/schemas/Iban' }
+        naarIban: { $ref: '#/components/schemas/Iban' }
+        bedrag: { $ref: '#/components/schemas/Bedrag' }
+        omschrijving: { type: string, maxLength: 140 }
+
+    Boekingsbevestiging:
+      type: object
+      required: [overboekingId, datum, bedrag, saldo]
+      properties:
+        overboekingId: { type: string, format: uuid }
+        datum: { type: string, format: date }
+        bedrag: { $ref: '#/components/schemas/Bedrag' }
+        saldo:
+          description: Saldo van de van-rekening na de boeking
+          allOf: [{ $ref: '#/components/schemas/Bedrag' }]
+
+    Simulatiedatum:
+      type: object
+      required: [datum, vanaf, tot, ingesteld]
+      properties:
+        datum: { type: string, format: date }
+        vanaf: { type: string, format: date }
+        tot: { type: string, format: date }
+        ingesteld:
+          type: boolean
+          description: false als de datum de systeemdatum volgt
+
+    SimulatiedatumWijziging:
+      type: object
+      properties:
+        datum:
+          type: string
+          format: date
+          description: Leeg = terug naar de systeemdatum
+
+    RekeninghouderSamenvatting:
+      type: object
+      required: [id, naam]
+      properties:
+        id: { type: string, format: uuid }
+        naam: { type: string }
+        betaalrekening: { $ref: '#/components/schemas/Iban' }
+        spaarrekening: { $ref: '#/components/schemas/Iban' }
+        saldoBetaal: { $ref: '#/components/schemas/Bedrag' }
+        saldoSpaar: { $ref: '#/components/schemas/Bedrag' }
+
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        correlationId: { type: string }

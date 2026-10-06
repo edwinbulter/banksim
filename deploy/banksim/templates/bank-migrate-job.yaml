@@ -1,0 +1,44 @@
+{{- $ctx := dict "root" . "name" "bank-migrate" }}
+# Flyway-migraties na elke install/upgrade; de Job wacht zelf tot PostgreSQL bereikbaar is.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bank-migrate
+  labels:
+    {{- include "banksim.labels" $ctx | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "banksim.labels" $ctx | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- include "banksim.podSecurity" (dict "uid" 65532) | nindent 6 }}
+      containers:
+        - name: bank-migrate
+          image: {{ include "banksim.image" (dict "root" . "key" "migrate") }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BANKSIM_DB_HOST
+              value: postgres.{{ .Release.Namespace }}.svc
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=75
+          resources:
+            {{- toYaml .Values.resources.migrate | nindent 12 }}
+          {{- include "banksim.containerSecurity" dict | nindent 10 }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/banksim/tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- include "banksim.tlsVolume" $ctx | nindent 8 }}
+        - name: tmp
+          emptyDir: {}

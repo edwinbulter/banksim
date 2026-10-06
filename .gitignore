@@ -1,0 +1,30 @@
+# Build output
+target/
+dist/
+out/
+.angular/
+
+# Dependencies
+node_modules/
+
+# Test output
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+e2e/.auth/
+
+# Generated certificates, keys and secrets (never commit)
+deploy/.secrets/
+
+# Local environment
+.env
+.env.*
+*.log
+
+# IDE / OS
+*.iml
+.idea/*
+!.idea/.gitignore
+.vscode/
+.DS_Store
+frontend/bom.json

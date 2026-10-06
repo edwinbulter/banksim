@@ -1,0 +1,21 @@
+{
+  "name": "banksim-e2e",
+  "private": true,
+  "description": "Playwright end-to-end tests for BankSim",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "install-browsers": "playwright install --with-deps chromium firefox webkit"
+  },
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
+  }
+}

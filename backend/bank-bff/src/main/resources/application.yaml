@@ -1,0 +1,99 @@
+spring:
+  application:
+    name: bank-bff
+  threads:
+    virtual:
+      enabled: true
+  ssl:
+    bundle:
+      pem:
+        server:
+          keystore:
+            certificate: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.crt
+            private-key: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.key
+          truststore:
+            certificate: file:${BANKSIM_TLS_DIR:/etc/banksim/tls}/ca.crt
+  datasource:
+    # Authenticatie met clientcertificaat (CN bank-bff → databasegebruiker bank_bff), geen wachtwoord.
+    url: >-
+      jdbc:postgresql://${BANKSIM_DB_HOST:postgres.banksim.svc}:5432/bank?currentSchema=bff&sslmode=verify-full&sslrootcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/ca.crt&sslcert=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.crt&sslkey=${BANKSIM_TLS_DIR:/etc/banksim/tls}/tls.pk8
+    username: bank_bff
+    hikari:
+      connection-timeout: 3000
+      validation-timeout: 1000
+      maximum-pool-size: 10
+  session:
+    timeout: 15m
+    jdbc:
+      table-name: bff.spring_session
+      initialize-schema: never
+  http:
+    clients:
+      connect-timeout: 3s
+      read-timeout: 5s
+
+server:
+  port: 8443
+  # X-Forwarded-* van ingress-nginx (alleen ingress kan de BFF bereiken via mTLS)
+  forward-headers-strategy: native
+  shutdown: graceful
+  ssl:
+    bundle: server
+    client-auth: need
+
+banksim:
+  mtls:
+    allowed-clients: ingress
+  bff:
+    public-url: ${BANKSIM_PUBLIC_URL:https://bank.localtest.me}
+    api-url: ${BANKSIM_API_URL:https://bank-api.banksim.svc:8443}
+    keycloak:
+      public-url: ${BANKSIM_KEYCLOAK_PUBLIC_URL:https://auth.localtest.me}
+      internal-url: ${BANKSIM_KEYCLOAK_INTERNAL_URL:https://keycloak.banksim.svc:8443}
+      realm: banksim
+      client-id: bank-bff
+      client-secret: ${BANKSIM_BFF_CLIENT_SECRET}
+    sessie:
+      # Geheim uit een Secret; daaruit wordt de AES-256-sleutel voor de sessie-attributen afgeleid.
+      sleutel: ${BANKSIM_SESSIE_SLEUTEL}
+      secure-cookie: true
+    limiet:
+      login-per-minuut: 10
+      boekingen-per-minuut: 20
+
+# Circuit breaker voor bank-api (TO §12.2): open na 50% fouten over 20 calls, na 10 s voorzichtig weer proberen.
+resilience4j:
+  circuitbreaker:
+    instances:
+      bank-api:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  timelimiter:
+    instances:
+      bank-api:
+        # Ruimer dan de read-timeout van de HTTP-client (5 s), zodat die eerst afgaat.
+        timeout-duration: 7s
+
+management:
+  server:
+    port: 8081
+    ssl:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        startup:
+          include: db,keycloak
+        readiness:
+          include: readinessState
+        liveness:
+          include: livenessState

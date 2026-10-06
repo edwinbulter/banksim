@@ -1,0 +1,181 @@
+{{- /*
+Default-deny in de hele namespace; daarna precies de paden uit TO §10.1.
+Policies selecteren alleen op app.kubernetes.io/name.
+*/ -}}
+{{- define "banksim.peer" -}}
+- podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ . }}
+{{- end }}
+{{- define "banksim.fromIngress" -}}
+- namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: {{ . }}
+{{- end }}
+{{- define "banksim.probes" -}}
+{{- range .Values.network.probeSources }}
+- ipBlock:
+    cidr: {{ . }}
+{{- end }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bank-web
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bank-web
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- include "banksim.fromIngress" .Values.ingress.namespace | nindent 8 }}
+      ports: [{ port: 8443 }]
+    {{- with .Values.network.probeSources }}
+    - from:
+        {{- include "banksim.probes" $ | nindent 8 }}
+      ports: [{ port: 8081 }]
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bank-bff
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bank-bff
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        {{- include "banksim.fromIngress" .Values.ingress.namespace | nindent 8 }}
+      ports: [{ port: 8443 }]
+    {{- with .Values.network.probeSources }}
+    - from:
+        {{- include "banksim.probes" $ | nindent 8 }}
+      ports: [{ port: 8081 }]
+    {{- end }}
+  egress:
+    - to:
+        {{- include "banksim.peer" "bank-api" | nindent 8 }}
+        {{- include "banksim.peer" "keycloak" | nindent 8 }}
+      ports: [{ port: 8443 }]
+    - to:
+        {{- include "banksim.peer" "postgres" | nindent 8 }}
+      ports: [{ port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bank-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bank-api
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        {{- include "banksim.peer" "bank-bff" | nindent 8 }}
+      ports: [{ port: 8443 }]
+    {{- with .Values.network.probeSources }}
+    - from:
+        {{- include "banksim.probes" $ | nindent 8 }}
+      ports: [{ port: 8081 }]
+    {{- end }}
+  egress:
+    - to:
+        {{- include "banksim.peer" "keycloak" | nindent 8 }}
+      ports: [{ port: 8443 }]
+    - to:
+        {{- include "banksim.peer" "postgres" | nindent 8 }}
+      ports: [{ port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        {{- include "banksim.fromIngress" .Values.ingress.namespace | nindent 8 }}
+        {{- include "banksim.peer" "bank-bff" | nindent 8 }}
+        {{- include "banksim.peer" "bank-api" | nindent 8 }}
+        {{- include "banksim.peer" "bank-datagen" | nindent 8 }}
+      ports: [{ port: 8443 }]
+    {{- with .Values.network.probeSources }}
+    - from:
+        {{- include "banksim.probes" $ | nindent 8 }}
+      ports: [{ port: 9000 }]
+    {{- end }}
+  egress:
+    - to:
+        {{- include "banksim.peer" "postgres" | nindent 8 }}
+      ports: [{ port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- include "banksim.peer" "bank-bff" | nindent 8 }}
+        {{- include "banksim.peer" "bank-api" | nindent 8 }}
+        {{- include "banksim.peer" "keycloak" | nindent 8 }}
+        {{- include "banksim.peer" "bank-migrate" | nindent 8 }}
+        {{- include "banksim.peer" "bank-datagen" | nindent 8 }}
+      ports: [{ port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jobs
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [bank-migrate, bank-datagen]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- include "banksim.peer" "postgres" | nindent 8 }}
+      ports: [{ port: 5432 }]
+    - to:
+        {{- include "banksim.peer" "keycloak" | nindent 8 }}
+      ports: [{ port: 8443 }]

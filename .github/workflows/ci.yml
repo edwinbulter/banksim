@@ -1,0 +1,198 @@
+# Pipeline uit TO §16: tests, supply-chain-controles, images + Trivy en de Playwright-suite in een tijdelijk
+# kind-cluster. Actions staan op commit-SHA vast; Renovate houdt ze bij.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Wekelijks, zodat nieuwe CVE's ook zonder codewijziging opvallen.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  NODE_VERSION: "24"
+
+jobs:
+  backend:
+    name: Backend (mvn verify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: Unit-, integratie-, architectuur- en mutation tests, SBOM
+        run: backend/mvnw -B -ntp -f backend/pom.xml verify
+      - name: Testrapporten en SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-rapporten
+          path: |
+            backend/*/target/surefire-reports/
+            backend/*/target/site/jacoco/
+            backend/*/target/pit-reports/
+            backend/target/bom.json
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend (lint, test, build, audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      # De OpenAPI-generator voor de Angular-client is een Java-programma.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend run lint
+      - run: npm --prefix frontend test
+      - run: npm --prefix frontend run build
+      - name: Gegenereerde API-client actueel
+        run: scripts/check-api-client.sh
+      - name: npm audit
+        run: |
+          npm --prefix frontend audit --audit-level=high
+          npm --prefix e2e audit --audit-level=high
+      - name: SBOM
+        working-directory: frontend
+        run: npx --yes @cyclonedx/cyclonedx-npm@6.0.1 --omit dev --output-format JSON --output-file bom.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-sbom
+          path: frontend/bom.json
+
+  contract:
+    name: Contract (openapi-diff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: openapi.yaml achterwaarts compatibel
+        env:
+          BASIS: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'HEAD~1' }}
+        run: |
+          # Bij de eerste push of een geforceerde push bestaat "before" niet; vergelijk dan met de vorige commit.
+          if ! git cat-file -e "$BASIS^{commit}" 2>/dev/null; then BASIS=HEAD~1; fi
+          scripts/check-contract.sh "$BASIS"
+
+  dependency-check:
+    name: OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: NVD-database uit de cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-${{ github.run_id }}
+          restore-keys: nvd-
+      - name: Dependency-Check (faalt vanaf CVSS 7)
+        run: |
+          if [[ -z "$NVD_API_KEY" ]]; then
+            echo "::warning::Secret NVD_API_KEY ontbreekt; Dependency-Check overgeslagen (Trivy scant de images wel)"
+            exit 0
+          fi
+          backend/mvnw -B -ntp -f backend/pom.xml -Psecurity -DskipTests -Djacoco.skip=true -Dpit.skip=true verify
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-check
+          path: backend/target/dependency-check-report.*
+          if-no-files-found: ignore
+
+  e2e:
+    name: Images, Trivy en Playwright e2e (kind)
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BANKSIM_CONTEXT: kind-banksim-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.2.0
+      - name: kind-cluster banksim-ci
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          version: v0.31.0
+          cluster_name: banksim-ci
+          config: .github/kind-ci.yaml
+      - name: ingress-nginx (dezelfde versie als in single-node)
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/kind/deploy.yaml
+          kubectl -n ingress-nginx wait --for=condition=available deployment/ingress-nginx-controller --timeout=180s
+          kubectl -n ingress-nginx wait --for=condition=complete job --all --timeout=180s
+      - name: BankSim bouwen en installeren (met rooktests)
+        run: deploy/scripts/install.sh --context "$BANKSIM_CONTEXT" --e2e
+      - name: Trivy-scan van de images
+        run: scripts/scan-images.sh "$(git rev-parse --short HEAD)"
+      - name: Playwright-browsers
+        run: |
+          npm --prefix e2e ci
+          npm --prefix e2e run install-browsers
+      - name: Playwright e2e
+        run: npm --prefix e2e test
+      - name: Clusterstatus bij falen
+        if: failure()
+        run: |
+          kubectl -n banksim get pods,jobs,events --sort-by=.lastTimestamp || true
+          kubectl -n banksim logs -l app.kubernetes.io/part-of=banksim --all-containers --tail=100 --prefix || true
+      - name: Rapporten, traces en SBOM's
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-rapporten
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            target/scan/*.cdx.json
+          if-no-files-found: ignore
