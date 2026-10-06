@@ -117,4 +117,32 @@ make dependency-check  # OWASP Dependency-Check (zet NVD_API_KEY)
 make scan              # Trivy-scan en SBOM per image van de geïnstalleerde release
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) draait dit allemaal bij elke push en pull request, en wekelijks: backend- en frontendtests, contractcheck, Dependency-Check, en in een tijdelijk kind-cluster de installatie, de Trivy-scan en de Playwright-suite. Images en Actions staan op digest of commit vast; Renovate houdt ze bij. Voor Dependency-Check in CI is het repository-secret `NVD_API_KEY` nodig ([gratis aan te vragen](https://nvd.nist.gov/developers/request-an-api-key)). Zie [hoofdstuk 16 van het technisch ontwerp](doc/technisch-ontwerp.md#16-build-en-ci).
+GitHub Actions (`.github/workflows/ci.yml`) draait dit allemaal bij elke push en pull request, en wekelijks: backend- en frontendtests, contractcheck, Dependency-Check, en in een tijdelijk kind-cluster de installatie, de Trivy-scan en de Playwright-suite. Images en Actions staan op digest of commit vast; Renovate houdt ze bij. Zie [hoofdstuk 16 van het technisch ontwerp](doc/technisch-ontwerp.md#16-build-en-ci).
+
+### Eenmalige inrichting op GitHub
+
+Twee onderdelen werken pas na een handmatige stap in GitHub. Zonder deze stappen blijft de pipeline groen, maar ontbreken twee controles.
+
+**1. NVD API-sleutel voor Dependency-Check**
+
+*Waarom:* OWASP Dependency-Check vergelijkt de Java-dependencies met de kwetsbaarhedendatabase van het NIST (NVD). Zonder API-sleutel beperkt de NVD het aantal verzoeken zo sterk dat de eerste download van de database uren duurt. De CI-job slaat de controle daarom over (met een waarschuwing) zolang er geen sleutel is; dan controleert alleen Trivy de images.
+
+*Hoe:*
+
+1. Vraag een gratis sleutel aan op <https://nvd.nist.gov/developers/request-an-api-key>; je krijgt een activatielink per e-mail.
+2. Voeg hem in GitHub toe als repository-secret: *Settings → Secrets and variables → Actions → New repository secret*, naam `NVD_API_KEY`.
+3. Lokaal: `export NVD_API_KEY=…` en dan `make dependency-check`.
+
+De eerste run met sleutel downloadt de volledige database (10–20 minuten); daarna komt die uit de cache en worden alleen wijzigingen opgehaald. De job faalt bij een kwetsbaarheid met CVSS 7 of hoger. Een terechte uitzondering zet je in `backend/dependency-check-suppressions.xml`, met reden en einddatum.
+
+**2. Renovate voor automatische updates**
+
+*Waarom:* versies van dependencies, base images (op digest) en GitHub Actions staan bewust vast, zodat een build reproduceerbaar is en niet ongemerkt een gewijzigd image binnenhaalt. Daardoor komen beveiligingsfixes ook niet vanzelf binnen. Renovate opent voor elke update een pull request, waarop de volledige pipeline draait, zodat je een update pas merget als alle tests groen zijn.
+
+*Hoe:*
+
+1. Installeer de [Renovate GitHub App](https://github.com/apps/renovate) en geef hem alleen toegang tot deze repository.
+2. Renovate leest `renovate.json` en opent eerst een onboarding-PR met een overzicht van wat hij gevonden heeft; merge die.
+3. Daarna: elke maandagochtend update-PR's (gegroepeerd, maximaal 5 tegelijk), en bij een bekende kwetsbaarheid direct een PR met het label `security`. Een *Dependency Dashboard*-issue toont alles wat openstaat.
+
+Zonder de app doet `renovate.json` niets.

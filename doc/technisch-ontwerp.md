@@ -582,6 +582,7 @@ Supply-chainmaatregelen (OWASP A03 Software Supply Chain Failures):
 - **Trivy** scant de vijf BankSim-images plus Keycloak en PostgreSQL op HIGH/CRITICAL met beschikbare fix. Uitzondering met verantwoording: `gosu` in het PostgreSQL-image wordt overgeslagen, omdat de StatefulSet direct als uid 70 start en gosu nooit draait.
 - **Versie-overrides.** Waar een fix nog niet in de Spring Boot-BOM zit, overschrijft `backend/pom.xml` de versie (nu Tomcat 11.0.26 en Jackson 3.1.7 / 2.21.7), met de CVE's in het commentaar; weghalen zodra Spring Boot ze meebrengt. In de frontend zet `overrides` een gepatchte `basic-ftp` onder de OpenAPI-generator (alleen ontwikkeltool).
 - **Onderdrukkingen** voor Dependency-Check staan in `backend/dependency-check-suppressions.xml`, elk met reden en einddatum.
+- Twee onderdelen vragen een eenmalige stap in GitHub: het secret `NVD_API_KEY` voor Dependency-Check en de Renovate GitHub App. Waarom en hoe staat in de README, paragraaf "Eenmalige inrichting op GitHub".
 - Ondertekenen van images (cosign) is optioneel en nu niet ingericht: de images verlaten de lokale machine of CI-runner niet.
 
 ## 17. Genomen beslissingen
