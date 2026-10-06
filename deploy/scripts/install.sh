@@ -24,6 +24,9 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# Image voor de rooktests in het cluster, op digest vastgepind.
+SMOKE_IMAGE="curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777"
+
 COMPONENTS=(bank-web bank-bff bank-api bank-migrate bank-datagen keycloak postgres)
 
 check_prerequisites() {
@@ -161,8 +164,8 @@ expect_status() {
 curl_in_pod() {
   local ns="$1" labels="$2" url="$3"
   kc -n "$ns" run "smoke-$RANDOM" --rm -i --restart=Never --quiet \
-    --image=curlimages/curl:8.22.0 --labels="$labels" \
-    --overrides='{"spec":{"automountServiceAccountToken":false,"securityContext":{"runAsNonRoot":true,"runAsUser":100,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"smoke","image":"curlimages/curl:8.22.0","command":["sh","-c","curl -sk --max-time 5 -o /dev/null '"$url"'; echo exit=$?"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' \
+    --image="$SMOKE_IMAGE" --labels="$labels" \
+    --overrides='{"spec":{"automountServiceAccountToken":false,"securityContext":{"runAsNonRoot":true,"runAsUser":100,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"smoke","image":"'"$SMOKE_IMAGE"'","command":["sh","-c","curl -sk --max-time 5 -o /dev/null '"$url"'; echo exit=$?"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' \
     2>/dev/null | sed -n 's/^exit=//p'
 }
 

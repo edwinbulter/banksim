@@ -554,21 +554,35 @@ De Ingress gebruikt de annotaties `nginx.ingress.kubernetes.io/backend-protocol:
 
 ### 15.3 Images en pods
 
-- Backend-images met Jib (distroless Java 21, non-root), frontend-image op `nginx-unprivileged`; tag = git-commit; laden met `kind load docker-image --name single-node`; `imagePullPolicy: IfNotPresent`.
+- Backend-images met Jib (distroless Java 21 op Debian 13, non-root, base image op digest), frontend-image op `nginx-unprivileged`; tag = git-commit; laden met `kind load docker-image --name single-node`; `imagePullPolicy: IfNotPresent`.
 - Elke pod: `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`, `automountServiceAccountToken: false` (behalve waar nodig), eigen service-account per component.
 - Resources: requests/limits per pod; probes: `startupProbe` op een health group `startup` (DB één keer bereikt, JWKS één keer geladen), `livenessProbe` op `/actuator/health/liveness`, `readinessProbe` op `/actuator/health/readiness` (zonder externe afhankelijkheden) (management-poort 8081, niet via de ingress).
 - Configuratie via ConfigMaps; geheimen (DB-wachtwoorden, client secret, HMAC-sleutel cursors, Keycloak-wachtwoorden) via Secrets.
+- `revisionHistoryLimit: 3`: elke build met een nieuwe image-tag maakt een nieuwe ReplicaSet; zo blijven er per Deployment hooguit drie oude staan.
+- Keycloak draait met `KC_CACHE=local`: met één replica is een Infinispan-cluster overbodig, en bij een rolling update zou de nieuwe pod anders wachten op een cluster met de oude pod, wat de NetworkPolicy tegenhoudt.
 
 ## 16. Build en CI
 
-Lokaal één `Makefile` met targets `build`, `test`, `install` en `uninstall` (roepen de scripts aan) en `e2e`. Pipeline (bijv. GitHub Actions) in deze volgorde:
+Lokaal één `Makefile` als ingang (`make help`): `build`, `test`, `e2e`, `install`, `uninstall`, en voor de supply chain `check`, `audit`, `sbom`, `dependency-check` en `scan`. CI draait in GitHub Actions (`.github/workflows/ci.yml`) bij elke push naar `main`, elke pull request en wekelijks (nieuwe CVE's zonder codewijziging):
 
-1. `mvn verify` (unit, slice, integratie, architectuur, contract, JaCoCo, PIT op `bank-domain`)
-2. `npm ci && npm run lint && npm test && npm run build` (frontend)
-3. Dependency-Check, `npm audit`, CycloneDX-SBOM
-4. Images bouwen (Jib, Docker), Trivy-scan, optioneel cosign
-5. In CI een tijdelijk kind-cluster met ingress-nginx opzetten, `install.sh --context …` en Playwright e2e
-6. Artefacten: testrapporten, SBOM's, Playwright-traces
+| Job | Wat | Faalt bij |
+| --- | --- | --- |
+| `backend` | `mvnw verify`: unit, slice, integratie (Testcontainers), architectuur, JaCoCo, PIT op `bank-domain`; CycloneDX-SBOM `backend/target/bom.json` | Falende test, drempel niet gehaald |
+| `frontend` | `npm ci`, lint, Vitest, productie-build; `scripts/check-api-client.sh` (gegenereerde Angular-client past bij `openapi.yaml`); `npm audit` van frontend en e2e; CycloneDX-SBOM | Falende test, verouderde client, kwetsbaarheid ≥ high |
+| `contract` | `scripts/check-contract.sh`: openapi-diff van `openapi.yaml` tegen de basis van de pull request (of de vorige commit) | Achterwaarts incompatibele wijziging (verwijderd endpoint, nieuw verplicht veld, …) |
+| `dependency-check` | OWASP Dependency-Check (`-Psecurity`) op de backend; NVD-database in de cache; heeft secret `NVD_API_KEY` nodig, anders overgeslagen met een waarschuwing | CVSS ≥ 7 |
+| `e2e` | Tijdelijk kind-cluster `banksim-ci` (`.github/kind-ci.yaml`, poort 80/443) met ingress-nginx 1.11.3 (zelfde versie als `single-node`); `install.sh --context kind-banksim-ci --e2e` incl. rooktests; `scripts/scan-images.sh` (Trivy + SBOM per image); Playwright in Chromium, Firefox en WebKit | Falende installatie of rooktest, HIGH/CRITICAL met beschikbare fix, falende e2e-test |
+
+Artefacten: testrapporten (Surefire, JaCoCo, PIT), SBOM's (backend, frontend, per image), Dependency-Check-rapport, Playwright-rapport met traces, screenshots en video's.
+
+Supply-chainmaatregelen (OWASP A03 Software Supply Chain Failures):
+
+- **Vastgepinde versies.** Alle base images en externe images (distroless Java 21 op Debian 13, node, nginx-unprivileged, Keycloak, PostgreSQL, curl voor de rooktests, Trivy) staan op `tag@sha256:digest`; GitHub Actions staan op commit-SHA; npm via `package-lock.json` en `npm ci`; Maven-plugins met vaste versies.
+- **Renovate** (`renovate.json`) werkt dependencies, digests en Actions wekelijks bij; beveiligingsmeldingen direct. Spring Boot blijft op 4.0.x zolang Spring Cloud 4.1 niet ondersteunt. Een eigen regex-manager vindt de images in `values.yaml`, `pom.xml`, scripts en Testcontainers-tests.
+- **Trivy** scant de vijf BankSim-images plus Keycloak en PostgreSQL op HIGH/CRITICAL met beschikbare fix. Uitzondering met verantwoording: `gosu` in het PostgreSQL-image wordt overgeslagen, omdat de StatefulSet direct als uid 70 start en gosu nooit draait.
+- **Versie-overrides.** Waar een fix nog niet in de Spring Boot-BOM zit, overschrijft `backend/pom.xml` de versie (nu Tomcat 11.0.26 en Jackson 3.1.7 / 2.21.7), met de CVE's in het commentaar; weghalen zodra Spring Boot ze meebrengt. In de frontend zet `overrides` een gepatchte `basic-ftp` onder de OpenAPI-generator (alleen ontwikkeltool).
+- **Onderdrukkingen** voor Dependency-Check staan in `backend/dependency-check-suppressions.xml`, elk met reden en einddatum.
+- Ondertekenen van images (cosign) is optioneel en nu niet ingericht: de images verlaten de lokale machine of CI-runner niet.
 
 ## 17. Genomen beslissingen
 

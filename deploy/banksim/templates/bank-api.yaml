@@ -21,6 +21,7 @@ metadata:
     {{- include "banksim.labels" $ctx | nindent 4 }}
 spec:
   replicas: {{ .Values.replicas.api }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "banksim.selector" $ctx | nindent 6 }}

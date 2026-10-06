@@ -1,0 +1,15 @@
+# Tijdelijk kind-cluster voor de e2e-tests in CI, zo veel mogelijk gelijk aan single-node in OrbStack:
+# één node met poort 80/443 naar de host, zodat *.localtest.me (127.0.0.1) bij ingress-nginx uitkomt.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    labels:
+      ingress-ready: "true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

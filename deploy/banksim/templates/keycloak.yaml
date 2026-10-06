@@ -32,6 +32,7 @@ metadata:
     {{- include "banksim.labels" $ctx | nindent 4 }}
 spec:
   replicas: 1
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "banksim.selector" $ctx | nindent 6 }}
@@ -48,6 +49,10 @@ spec:
           imagePullPolicy: IfNotPresent
           args: ["start", "--import-realm"]
           env:
+            # Eén replica: geen Infinispan-cluster. Anders wacht een nieuwe pod bij een rolling update op een
+            # cluster met de oude pod, wat de NetworkPolicy (terecht) tegenhoudt.
+            - name: KC_CACHE
+              value: local
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL

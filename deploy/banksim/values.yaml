@@ -2,14 +2,18 @@
 imageTag: dev
 certsChecksum: ""
 
+# Oude ReplicaSets per Deployment; elke build met een nieuwe image-tag maakt er een (standaard bewaart
+# Kubernetes er 10).
+revisionHistoryLimit: 3
+
 images:
   api: banksim/bank-api
   bff: banksim/bank-bff
   migrate: banksim/bank-migrate
   datagen: banksim/bank-datagen
   web: banksim/bank-web
-  keycloak: quay.io/keycloak/keycloak:26.8.0
-  postgres: postgres:18.6-alpine
+  keycloak: quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc
+  postgres: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
 
 hosts:
   bank: bank.localtest.me

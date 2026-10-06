@@ -27,3 +27,4 @@ deploy/.secrets/
 !.idea/.gitignore
 .vscode/
 .DS_Store
+frontend/bom.json

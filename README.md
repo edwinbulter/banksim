@@ -2,7 +2,7 @@
 
 BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met ongeveer 5 jaar realistische transactiehistorie. Een admin kan de datum van de simulatie verzetten; alle rekeninghouders zien hun rekeningen dan alsof het die dag is.
 
-> **Status:** fase 1 t/m 7 zijn klaar: alle schermen en API's uit het functioneel ontwerp werken, met inloggen via Keycloak, mTLS, NetworkPolicies, een versleutelde BFF-sessie, rate limiting en vijf jaar fake data, en een Playwright-suite test alle scenario's in Chromium, Firefox en WebKit. Nog te doen: CI en supply-chain-scans (fase 8).
+> **Status:** alle fases uit het implementatieplan zijn klaar: alle schermen en API's uit het functioneel ontwerp werken, met inloggen via Keycloak, mTLS, NetworkPolicies, een versleutelde BFF-sessie, rate limiting en vijf jaar fake data. Een Playwright-suite test alle scenario's in Chromium, Firefox en WebKit, en de CI-pipeline controleert contract, dependencies en images.
 
 ## Documentatie
 
@@ -73,14 +73,16 @@ banksim/
 ├── backend/      Maven multi-module: bank-domain, bank-api, bank-bff, bank-migrate, bank-datagen
 ├── frontend/     Angular-app bank-web
 ├── e2e/          Playwright-tests
-└── deploy/       install- en uninstall-scripts, Helm-chart
+├── deploy/       install- en uninstall-scripts, Helm-chart
+├── scripts/      contractcheck, client-check en Trivy-scan (lokaal en in CI)
+└── .github/      CI-workflow en kind-configuratie voor de e2e-tests
 ```
 
 ## Aan de slag
 
 BankSim wordt geïnstalleerd in een eigen namespace `banksim` in het bestaande kind-cluster `single-node` (OrbStack). Keycloak en PostgreSQL draaien in dezelfde namespace; buiten de namespace wordt niets geïnstalleerd. Het cluster moet ingress-nginx hebben op poort 80/443.
 
-Vereisten: Java 21, Maven 3.9, Node 22 LTS, OrbStack (of Docker), kind (≥ 0.31), kubectl, Helm en openssl.
+Vereisten: Java 21, Node 24 (of 22.22.3+), OrbStack (of Docker), kind (≥ 0.31), kubectl, Helm 4, openssl en jq. Maven zit in de wrapper (`backend/mvnw`).
 
 ```bash
 deploy/scripts/install.sh           # images bouwen, certificaten en secrets maken, alles installeren
@@ -104,3 +106,15 @@ deploy/scripts/reset-data.sh   # testdata terugzetten naar de vaste beginstand
 ```
 
 De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp; ze zetten de testdata zelf terug en halen de wachtwoorden uit het Secret. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).
+
+## Supply chain en CI
+
+```bash
+make check             # openapi.yaml achterwaarts compatibel met origin/main; Angular-client actueel
+make audit             # npm audit van frontend en e2e
+make sbom              # CycloneDX-SBOM's van backend en frontend
+make dependency-check  # OWASP Dependency-Check (zet NVD_API_KEY)
+make scan              # Trivy-scan en SBOM per image van de geïnstalleerde release
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) draait dit allemaal bij elke push en pull request, en wekelijks: backend- en frontendtests, contractcheck, Dependency-Check, en in een tijdelijk kind-cluster de installatie, de Trivy-scan en de Playwright-suite. Images en Actions staan op digest of commit vast; Renovate houdt ze bij. Voor Dependency-Check in CI is het repository-secret `NVD_API_KEY` nodig ([gratis aan te vragen](https://nvd.nist.gov/developers/request-an-api-key)). Zie [hoofdstuk 16 van het technisch ontwerp](doc/technisch-ontwerp.md#16-build-en-ci).

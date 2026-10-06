@@ -40,6 +40,14 @@
         <bucket4j.version>8.21.0</bucket4j.version>
         <wiremock.version>3.13.2</wiremock.version>
 
+        <!--
+          Beveiligingsfixes vóór de volgende Spring Boot 4.0.x-patch (Trivy, TO §16): CVE-2026-65182 (Tomcat),
+          CVE-2026-89407 en CVE-2026-68497 (Jackson). Weghalen zodra Spring Boot deze versies zelf meebrengt.
+        -->
+        <tomcat.version>11.0.26</tomcat.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
+        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+
         <jib-maven-plugin.version>3.5.2</jib-maven-plugin.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
         <pitest-maven.version>1.30.0</pitest-maven.version>
@@ -47,9 +55,10 @@
         <openapi-generator-maven-plugin.version>7.25.0</openapi-generator-maven-plugin.version>
         <cyclonedx-maven-plugin.version>2.9.3</cyclonedx-maven-plugin.version>
         <dependency-check-maven.version>13.0.0</dependency-check-maven.version>
+        <openapi-diff-maven.version>2.1.7</openapi-diff-maven.version>
 
         <!-- Distroless Java 21, runs as non-root -->
-        <jib.from.image>gcr.io/distroless/java21-debian12:nonroot</jib.from.image>
+        <jib.from.image>gcr.io/distroless/java21-debian13:nonroot@sha256:0a1f5a75661918de9c0813f287f651c3bf2d6dd752eada5f084eb0c1f14ced9e</jib.from.image>
         <image.tag>dev</image.tag>
         <!-- Alleen de applicatiemodules zetten dit op false -->
         <jib.skip>true</jib.skip>
@@ -173,7 +182,115 @@
                     <artifactId>dependency-check-maven</artifactId>
                     <version>${dependency-check-maven.version}</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.openapitools.openapidiff</groupId>
+                    <artifactId>openapi-diff-maven</artifactId>
+                    <version>${openapi-diff-maven.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!-- SBOM (TO §16): één CycloneDX-bestand voor de hele backend, target/bom.json en bom.xml -->
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <inherited>false</inherited>
+                <executions>
+                    <execution>
+                        <id>sbom</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <projectType>application</projectType>
+                    <includeTestScope>false</includeTestScope>
+                    <outputName>bom</outputName>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
+
+    <profiles>
+        <!--
+          Bekende kwetsbaarheden in dependencies (OWASP A03, TO §16): mvnw -Psecurity verify.
+          Breekt de build vanaf CVSS 7. Zet NVD_API_KEY, anders duurt de eerste download van de NVD-database uren.
+        -->
+        <profile>
+            <id>security</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <inherited>false</inherited>
+                        <executions>
+                            <execution>
+                                <id>dependency-check</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>aggregate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <skipTestScope>true</skipTestScope>
+                            <suppressionFiles>
+                                <suppressionFile>${maven.multiModuleProjectDirectory}/dependency-check-suppressions.xml</suppressionFile>
+                            </suppressionFiles>
+                            <formats>
+                                <format>HTML</format>
+                                <format>JSON</format>
+                            </formats>
+                            <!-- Analyzers voor andere ecosystemen zijn hier niet nodig; npm wordt met npm audit gecontroleerd -->
+                            <nodeAnalyzerEnabled>false</nodeAnalyzerEnabled>
+                            <nodeAuditAnalyzerEnabled>false</nodeAuditAnalyzerEnabled>
+                            <yarnAuditAnalyzerEnabled>false</yarnAuditAnalyzerEnabled>
+                            <pnpmAuditAnalyzerEnabled>false</pnpmAuditAnalyzerEnabled>
+                            <retireJsAnalyzerEnabled>false</retireJsAnalyzerEnabled>
+                            <ossindexAnalyzerEnabled>false</ossindexAnalyzerEnabled>
+                            <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+          Contractcheck (TO §13): openapi.yaml mag niet achterwaarts incompatibel veranderen ten opzichte van een
+          eerdere versie. scripts/check-contract.sh zet die eerdere versie in target/ en draait dit profiel.
+        -->
+        <profile>
+            <id>contract</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openapitools.openapidiff</groupId>
+                        <artifactId>openapi-diff-maven</artifactId>
+                        <inherited>false</inherited>
+                        <executions>
+                            <execution>
+                                <id>contract</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>diff</goal>
+                                </goals>
+                                <configuration>
+                                    <oldSpec>${project.build.directory}/openapi-basis.yaml</oldSpec>
+                                    <newSpec>${maven.multiModuleProjectDirectory}/bank-api/src/main/resources/openapi.yaml</newSpec>
+                                    <failOnIncompatible>true</failOnIncompatible>
+                                    <markdownOutputFileName>${project.build.directory}/openapi-diff.md</markdownOutputFileName>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
