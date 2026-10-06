@@ -2,7 +2,7 @@
 
 BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met ongeveer 5 jaar realistische transactiehistorie. Een admin kan de datum van de simulatie verzetten; alle rekeninghouders zien hun rekeningen dan alsof het die dag is.
 
-> **Status:** fase 1 t/m 3 van de implementatie zijn klaar: installeren en verwijderen met scripts, inloggen via Keycloak, mTLS en NetworkPolicies, het grootboek met domeinregels, en vijf jaar fake data voor tien huishoudens. De schermen en API's uit het functioneel ontwerp volgen in de volgende fases.
+> **Status:** fase 1 t/m 6 zijn klaar: alle schermen en API's uit het functioneel ontwerp werken, met inloggen via Keycloak, mTLS, NetworkPolicies, een versleutelde BFF-sessie, rate limiting en vijf jaar fake data. Nog te doen: de Playwright e2e-suite (fase 7) en CI/supply-chain-scans (fase 8).
 
 ## Documentatie
 

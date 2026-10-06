@@ -91,7 +91,7 @@ banksim/
 │   ├── bank-migrate/         Flyway-migraties + runner
 │   └── bank-datagen/         fake data-generator
 ├── frontend/                 Angular workspace, app bank-web
-│   └── src/app/{klant,admin,shared,core}
+│   └── src/app/{core,klant,admin,shared,api}   api = gegenereerd uit openapi.yaml
 ├── e2e/                      Playwright-tests
 └── deploy/
     ├── scripts/              install.sh, uninstall.sh, certs.sh, reset-data.sh, trust-ca.sh
