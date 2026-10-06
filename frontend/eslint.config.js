@@ -6,6 +6,10 @@ const angular = require('angular-eslint');
 
 module.exports = defineConfig([
   {
+    // Gegenereerd uit openapi.yaml (npm run generate:api)
+    ignores: ['src/app/api/**'],
+  },
+  {
     files: ['**/*.ts'],
     extends: [
       eslint.configs.recommended,
@@ -15,6 +19,12 @@ module.exports = defineConfig([
     ],
     processor: angular.processInlineTemplates,
     rules: {
+      // Geld nooit als floating point (TO §5): bedragen gaan via big.js (src/app/shared/bedrag.ts).
+      'no-restricted-globals': ['error',
+        { name: 'parseFloat', message: 'Gebruik big.js via shared/bedrag.ts' },
+        { name: 'Number', message: 'Gebruik big.js via shared/bedrag.ts' }],
+      'no-restricted-properties': ['error',
+        { object: 'Number', property: 'parseFloat', message: 'Gebruik big.js via shared/bedrag.ts' }],
       '@angular-eslint/directive-selector': [
         'error',
         {

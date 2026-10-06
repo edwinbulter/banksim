@@ -395,7 +395,7 @@ BFF en API valideren de issuer tegen de publieke URL `https://auth.localtest.me/
 
 ### 10.4 Frontend-hardening
 
-- Content-Security-Policy via nginx: `default-src 'self'; script-src 'self'; style-src 'self' 'nonce-…'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://auth.localtest.me`. Angular `autoCsp` / `ngCspNonce`.
+- Content-Security-Policy via nginx: `default-src 'self'; script-src 'self'; style-src 'self' 'nonce-…'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://auth.localtest.me`. nginx vervangt per request een placeholder in `index.html` door een nonce (`$request_id`); Angular zet die via `ngCspNonce` op zijn `<style>`-elementen. Inline critical CSS staat uit, omdat die een `onload`-handler gebruikt. `base-uri` is `'self'` vanwege Angulars `<base href="/">`.
 - Overige headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` restrictief.
 - Geen `innerHTML`/`bypassSecurityTrust*`; Angular escapet standaard. ESLint-regels bewaken dit.
 

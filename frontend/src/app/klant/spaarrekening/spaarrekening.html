@@ -1,0 +1,30 @@
+<p class="terug">
+  @if (sessie.isAdmin()) {
+    <button type="button" class="link" (click)="terug()">‹ Terug</button>
+  } @else {
+    <a routerLink="/">‹ Overzicht</a>
+  }
+</p>
+<app-fout-melding [fout]="fout()" (opnieuw)="laad()" />
+
+@if (rekening(); as r) {
+  <header class="rekening-kop">
+    <h1>Spaarrekening – {{ r.rekeninghouder }}</h1>
+    <p class="rekening-kop__iban">{{ ibanTekst(r.iban) }}</p>
+    <p class="rekening-kop__saldo">Saldo <span class="bedrag">{{ r.saldo | bedrag: 'valuta' }}</span></p>
+    <p class="rekening-kop__rente">
+      Rente {{ percentage(r.rentepercentage) }}%, deze maand opgebouwd (nog niet bijgeschreven):
+      <span class="bedrag">{{ r.lopendeRente | bedrag: 'valuta' }}</span>
+    </p>
+  </header>
+
+  @if (!r.alleenLezen && r.gekoppeldeRekening) {
+    <div class="knoppen knoppen--links">
+      <a class="knop" routerLink="/overschrijven" [queryParams]="{ van: r.iban, naar: r.gekoppeldeRekening }">Opnemen</a>
+      <a class="knop" routerLink="/overschrijven" [queryParams]="{ van: r.gekoppeldeRekening, naar: r.iban }">Inleggen</a>
+    </div>
+  }
+
+  <h2>Af- en bijschrijvingen</h2>
+  <app-transactie-lijst [iban]="r.iban" [soort]="Soort.SPAAR" />
+}

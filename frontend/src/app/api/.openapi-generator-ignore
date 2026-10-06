@@ -1,0 +1,4 @@
+# Alleen de client zelf; geen voorbeeldbestanden of NgModule.
+git_push.sh
+README.md
+.gitignore

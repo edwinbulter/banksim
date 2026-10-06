@@ -1,0 +1,37 @@
+<p class="terug"><a [routerLink]="['/spaarrekening', spaarIban()]">‹ Spaarrekening</a></p>
+<h1>Overschrijven</h1>
+<app-fout-melding [fout]="fout()" (opnieuw)="vanRekening() ? overschrijven() : laad(van(), naar())" />
+
+@if (vanRekening() && naarRekening()) {
+  <form class="formulier" [formGroup]="formulier" (ngSubmit)="overschrijven()" novalidate>
+    <section class="van" aria-label="Van">
+      <h2>Van</h2>
+      <p>{{ soortNaam(vanRekening()!) }} {{ vanRekening()!.rekeninghouder }}</p>
+      <p>{{ ibanTekst(vanRekening()!.iban) }} · Saldo <span class="bedrag">{{ vanRekening()!.saldo | bedrag: 'valuta' }}</span></p>
+    </section>
+    <div class="wissel"><button type="button" class="knop knop--secundair" (click)="wissel()" aria-label="Van en naar wisselen">⇅ wissel</button></div>
+    <section class="van" aria-label="Naar">
+      <h2>Naar</h2>
+      <p>{{ soortNaam(naarRekening()!) }} {{ naarRekening()!.rekeninghouder }}</p>
+      <p>{{ ibanTekst(naarRekening()!.iban) }} · Saldo <span class="bedrag">{{ naarRekening()!.saldo | bedrag: 'valuta' }}</span></p>
+    </section>
+
+    <div class="veld">
+      <label for="bedrag">Bedrag (€)</label>
+      <input id="bedrag" type="text" inputmode="decimal" maxlength="17" autocomplete="off" formControlName="bedrag" />
+      @if (ongeldigBedrag) {
+        <small class="veld__fout" role="alert">Vul een bedrag groter dan € 0,00 in, met hooguit twee decimalen.</small>
+      }
+    </div>
+    <div class="veld">
+      <label for="omschrijving">Omschrijving</label>
+      <input id="omschrijving" type="text" maxlength="140" formControlName="omschrijving" aria-describedby="omschrijving-teller" />
+      <small class="teller" id="omschrijving-teller">{{ formulier.controls.omschrijving.value.length }}/140</small>
+    </div>
+
+    <div class="knoppen">
+      <a class="knop knop--secundair" [routerLink]="['/spaarrekening', spaarIban()]">Annuleren</a>
+      <button type="submit" class="knop" [disabled]="bezig()">{{ bezig() ? 'Bezig…' : 'Overschrijven' }}</button>
+    </div>
+  </form>
+}

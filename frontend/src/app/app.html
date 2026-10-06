@@ -1,6 +1,16 @@
 <header class="topbar">
-  <span class="brand">{{ title() }}</span>
+  <a class="brand" [routerLink]="sessie.isAdmin() ? '/admin' : '/'">{{ title() }}</a>
   @if (sessie.gebruiker(); as gebruiker) {
+    <nav class="topbar__nav" aria-label="Hoofdmenu">
+      @if (sessie.isAdmin()) {
+        <a routerLink="/admin">Beheer</a>
+      } @else {
+        <a routerLink="/">Overzicht</a>
+      }
+    </nav>
+    @if (simulatiedatum.datum(); as d) {
+      <span class="topbar__datum">Datum: {{ datum(d) }}</span>
+    }
     <span class="welkom">Welkom, {{ gebruiker.naam }}</span>
     <app-logout />
   }

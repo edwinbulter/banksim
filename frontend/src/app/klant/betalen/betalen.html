@@ -1,0 +1,98 @@
+<p class="terug"><a [routerLink]="['/betaalrekening', iban()]">‹ Betaalrekening</a></p>
+<h1>Betalen</h1>
+
+@if (van(); as v) {
+  <section class="van" aria-label="Van">
+    <h2>Van</h2>
+    <p>{{ v.rekeninghouder }}</p>
+    <p>Saldo <span class="bedrag">{{ v.saldo | bedrag: 'valuta' }}</span></p>
+    <p>{{ ibanTekst(v.iban) }}</p>
+  </section>
+}
+
+<app-fout-melding [fout]="fout()" (opnieuw)="stap() === 'controle' ? bevestigen() : laad()" />
+
+@if (stap() === 'invoer') {
+  <form class="formulier" [formGroup]="formulier" (ngSubmit)="volgende()" novalidate>
+    <div class="veld">
+      <label for="bedrag">Bedrag (€)</label>
+      <input id="bedrag" type="text" inputmode="decimal" maxlength="17" autocomplete="off" formControlName="bedrag" />
+      @if (formulier.controls.bedrag.touched && formulier.controls.bedrag.invalid) {
+        <small class="veld__fout" role="alert">Vul een bedrag groter dan € 0,00 in, met hooguit twee decimalen.</small>
+      } @else if (boveSaldo()) {
+        <small class="veld__waarschuwing">Dit is meer dan je saldo.</small>
+      }
+    </div>
+
+    <div class="veld">
+      <label for="naam">Naam ontvanger</label>
+      <input id="naam" type="text" maxlength="70" autocomplete="off" (input)="zoekContact(formulier.controls.naamOntvanger.value)" formControlName="naamOntvanger" aria-describedby="naam-teller" />
+      <small class="teller" id="naam-teller">{{ formulier.controls.naamOntvanger.value.length }}/70</small>
+      @if (formulier.controls.naamOntvanger.touched && formulier.controls.naamOntvanger.invalid) {
+        <small class="veld__fout" role="alert">Vul de naam van de ontvanger in.</small>
+      }
+    </div>
+
+    <div class="veld">
+      <label for="iban">Rekeningnummer (IBAN)</label>
+      <input id="iban" type="text" maxlength="34" autocomplete="off" (input)="zoekContact(formulier.controls.ibanOntvanger.value)" formControlName="ibanOntvanger" aria-describedby="iban-teller" />
+      <small class="teller" id="iban-teller">{{ formulier.controls.ibanOntvanger.value.length }}/34</small>
+      @if (formulier.controls.ibanOntvanger.touched && formulier.controls.ibanOntvanger.invalid) {
+        <small class="veld__fout" role="alert">Vul het rekeningnummer van de ontvanger in.</small>
+      }
+    </div>
+
+    @if (suggesties().length > 0) {
+      <ul class="suggesties" aria-label="Suggesties uit je contacten">
+        @for (c of suggesties(); track c.iban) {
+          <li><button type="button" (click)="kies(c)">{{ c.naam }} <span>{{ ibanTekst(c.iban) }}</span></button></li>
+        }
+      </ul>
+    }
+
+    <div class="veld">
+      <label for="omschrijving">Omschrijving</label>
+      <input id="omschrijving" type="text" maxlength="140" formControlName="omschrijving" aria-describedby="omschrijving-teller" />
+      <small class="teller" id="omschrijving-teller">{{ formulier.controls.omschrijving.value.length }}/140</small>
+    </div>
+    <div class="veld">
+      <label for="kenmerk">Betalingskenmerk</label>
+      <input id="kenmerk" type="text" maxlength="25" formControlName="betalingskenmerk" aria-describedby="kenmerk-teller" />
+      <small class="teller" id="kenmerk-teller">{{ formulier.controls.betalingskenmerk.value.length }}/25</small>
+    </div>
+    <div class="veld">
+      <label for="extra">Extra omschrijving</label>
+      <input id="extra" type="text" maxlength="35" formControlName="extraOmschrijving" aria-describedby="extra-teller" />
+      <small class="teller" id="extra-teller">{{ formulier.controls.extraOmschrijving.value.length }}/35</small>
+    </div>
+
+    <div class="knoppen">
+      <a class="knop knop--secundair" [routerLink]="['/betaalrekening', iban()]">Annuleren</a>
+      <button type="submit" class="knop">Volgende</button>
+    </div>
+  </form>
+} @else {
+  <section class="controle" aria-labelledby="controle-titel">
+    <h2 id="controle-titel">Controleer je betaling</h2>
+    <dl class="details">
+      <dt>Bedrag</dt><dd class="bedrag">{{ bedragTekst() }}</dd>
+      <dt>Naam ontvanger</dt><dd>{{ formulier.controls.naamOntvanger.value }}</dd>
+      <dt>Rekeningnummer</dt><dd>{{ ibanTekst(formulier.controls.ibanOntvanger.value) }}</dd>
+      @if (formulier.controls.omschrijving.value) {
+        <dt>Omschrijving</dt><dd>{{ formulier.controls.omschrijving.value }}</dd>
+      }
+      @if (formulier.controls.betalingskenmerk.value) {
+        <dt>Betalingskenmerk</dt><dd>{{ formulier.controls.betalingskenmerk.value }}</dd>
+      }
+      @if (formulier.controls.extraOmschrijving.value) {
+        <dt>Extra omschrijving</dt><dd>{{ formulier.controls.extraOmschrijving.value }}</dd>
+      }
+    </dl>
+    <div class="knoppen">
+      <button type="button" class="knop knop--secundair" (click)="wijzigen()" [disabled]="bezig()">Wijzigen</button>
+      <button type="button" class="knop" (click)="bevestigen()" [disabled]="bezig()">
+        {{ bezig() ? 'Bezig…' : 'Bevestigen' }}
+      </button>
+    </div>
+  </section>
+}

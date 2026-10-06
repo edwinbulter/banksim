@@ -7,7 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test --watch=false",
-    "lint": "ng lint"
+    "lint": "ng lint",
+    "generate:api": "openapi-generator-cli generate -i ../backend/bank-api/src/main/resources/openapi.yaml -g typescript-angular -o src/app/api --additional-properties=ngVersion=21.0.0,providedIn=root,stringEnums=true,supportsES6=true,useSingleRequestParameter=true,serviceSuffix=Api,serviceFileSuffix=.api,modelFileSuffix=,fileNaming=kebab-case,enumPropertyNaming=original"
   },
   "private": true,
   "packageManager": "npm@11.19.0",
@@ -27,6 +28,7 @@
     "@angular/cli": "^22.2.1",
     "@angular/compiler-cli": "^22.2.0",
     "@eslint/js": "^10.0.1",
+    "@openapitools/openapi-generator-cli": "2.41.0",
     "@types/big.js": "^7.0.0",
     "angular-eslint": "22.5.0",
     "eslint": "^10.9.1",
@@ -41,7 +43,8 @@
     "esbuild": false,
     "fsevents": false,
     "lmdb": false,
-    "msgpackr-extract": false
+    "msgpackr-extract": false,
+    "@openapitools/openapi-generator-cli": false
   },
   "engines": {
     "node": "^22.22.3 || ^24.15.0"

@@ -136,9 +136,11 @@ class BetalingApiTests extends IntegratieTest {
         mvc.perform(get("/api/accounts/{iban}", JAN_SPAAR).with(jan())).andExpect(jsonPath("$.saldo").value("6010.00"));
         mvc.perform(get("/api/accounts/{iban}/transactions", JAN_BETAAL).param("size", "1").with(jan()))
                 .andExpect(jsonPath("$.items[0].typeLabel").value("Overschrijving"))
+                .andExpect(jsonPath("$.items[0].tegenNaam").value("Spaarrekening Jan de Vries"))
                 .andExpect(jsonPath("$.items[0].omschrijving").value("Inleg"));
         mvc.perform(get("/api/accounts/{iban}/transactions", JAN_SPAAR).param("size", "1").with(jan()))
-                .andExpect(jsonPath("$.items[0].typeLabel").value("Inleg"));
+                .andExpect(jsonPath("$.items[0].typeLabel").value("Inleg"))
+                .andExpect(jsonPath("$.items[0].tegenNaam").value("Betaalrekening Jan de Vries"));
 
         // Na de correcties is de rente van oktober t/m december precies wat de calculator over het saldo zegt.
         RenteCalculator calculator = RenteCalculator.standaard();

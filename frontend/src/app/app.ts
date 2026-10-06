@@ -1,10 +1,12 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { RouterLink, RouterOutlet } from '@angular/router';
 import { Logout } from './core/logout';
 import { SessionService } from './core/session.service';
+import { SimulatiedatumService } from './core/simulatiedatum.service';
+import { toonDatum } from './shared/datum';
 
 @Component({
-  imports: [RouterOutlet, Logout],
+  imports: [RouterOutlet, RouterLink, Logout],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',
@@ -12,8 +14,10 @@ import { SessionService } from './core/session.service';
 export class App implements OnInit {
   protected readonly title = signal('BankSim');
   protected readonly sessie = inject(SessionService);
+  protected readonly simulatiedatum = inject(SimulatiedatumService);
+  protected readonly datum = toonDatum;
 
   ngOnInit(): void {
-    void this.sessie.laad();
+    this.sessie.laad().catch(() => undefined);
   }
 }

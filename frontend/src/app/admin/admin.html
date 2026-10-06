@@ -1,0 +1,49 @@
+<h1>Beheer</h1>
+<app-fout-melding [fout]="fout()" (opnieuw)="laad()" />
+@if (bevestiging(); as tekst) {
+  <div class="melding melding--succes" role="status">{{ tekst }}</div>
+}
+
+@if (simulatiedatum(); as s) {
+  <section class="kaart" aria-labelledby="simulatie-titel">
+    <h2 id="simulatie-titel">Simulatiedatum</h2>
+    <p>
+      Alle rekeninghouders zien hun rekeningen alsof het
+      <strong>{{ datum(s.datum) }}</strong> is{{ s.ingesteld ? '' : ' (de systeemdatum)' }}.
+    </p>
+    <form class="rij" (ngSubmit)="toepassen()">
+      <label class="veld">
+        <span>Datum</span>
+        <input type="date" name="datum" [(ngModel)]="nieuweDatum" [min]="s.vanaf" [max]="s.tot" required />
+      </label>
+      <button type="submit" class="knop">Toepassen</button>
+      <button type="button" class="knop knop--secundair" (click)="vandaag()">Terug naar vandaag</button>
+    </form>
+    <p class="hint">Beschikbaar: {{ datum(s.vanaf) }} t/m {{ datum(s.tot) }}</p>
+  </section>
+}
+
+<section class="kaart" aria-labelledby="houders-titel">
+  <div class="rij rij--tussen">
+    <h2 id="houders-titel">Rekeninghouders ({{ rekeninghouders().length }})</h2>
+    <label class="veld veld--inline">
+      <span class="visueel-verborgen">Zoek naam</span>
+      <input type="search" placeholder="Zoek naam" [ngModel]="zoek()" (ngModelChange)="zoek.set($event)" />
+    </label>
+  </div>
+  <table class="tabel">
+    <thead>
+      <tr><th>Naam</th><th>Betaalrekening</th><th class="getal">Saldo</th><th class="getal">Spaarsaldo</th></tr>
+    </thead>
+    <tbody>
+      @for (h of gefilterd(); track h.id) {
+        <tr>
+          <td><a [routerLink]="['/admin/rekeninghouders', h.id]">{{ h.naam }}</a></td>
+          <td>{{ ibanTekst(h.betaalrekening) }}</td>
+          <td class="getal bedrag">{{ h.saldoBetaal | bedrag }}</td>
+          <td class="getal bedrag">{{ h.saldoSpaar | bedrag }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</section>

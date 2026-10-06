@@ -1,1 +1,478 @@
-/* You can add global styles to this file, and also import other style files */
+/* BankSim – algemene stijl. Rustig en zakelijk; kleur alleen waar hij iets betekent (af/bij, fouten). */
+:root {
+  --kleur-tekst: #1f2328;
+  --kleur-zacht: #59636e;
+  --kleur-lijn: #d0d7de;
+  --kleur-vlak: #f6f8fa;
+  --kleur-achtergrond: #ffffff;
+  --kleur-primair: #0b5cad;
+  --kleur-primair-donker: #084c8f;
+  --kleur-af: #b42318;
+  --kleur-bij: #12704a;
+  --kleur-fout-vlak: #fdecea;
+  --kleur-succes-vlak: #e7f5ee;
+  --kleur-info-vlak: #eaf2fb;
+  --radius: 8px;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--kleur-tekst);
+  background: var(--kleur-achtergrond);
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0.5rem 0 1rem;
+}
+
+h2 {
+  font-size: 1.125rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+a {
+  color: var(--kleur-primair);
+}
+
+.bedrag {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bedrag--af {
+  color: var(--kleur-af);
+}
+
+.bedrag--bij {
+  color: var(--kleur-bij);
+}
+
+.terug {
+  margin: 0 0 0.5rem;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kleur-primair);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Knoppen */
+.knop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--kleur-primair);
+  border-radius: var(--radius);
+  background: var(--kleur-primair);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.knop:hover {
+  background: var(--kleur-primair-donker);
+}
+
+.knop:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.knop--secundair {
+  background: #fff;
+  color: var(--kleur-primair);
+}
+
+.knop--secundair:hover {
+  background: var(--kleur-info-vlak);
+}
+
+.knoppen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin: 1rem 0;
+}
+
+.knoppen--links {
+  justify-content: flex-start;
+}
+
+/* Meldingen */
+.melding {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0 1rem;
+  border-radius: var(--radius);
+}
+
+.melding--fout {
+  background: var(--kleur-fout-vlak);
+  color: var(--kleur-af);
+}
+
+.melding--succes {
+  background: var(--kleur-succes-vlak);
+  color: var(--kleur-bij);
+}
+
+.melding--info {
+  background: var(--kleur-info-vlak);
+}
+
+/* Overzicht */
+.rekening-kaart {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.125rem 1rem;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--kleur-lijn);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+
+.rekening-kaart:hover {
+  border-color: var(--kleur-primair);
+}
+
+.rekening-kaart__soort {
+  font-weight: 600;
+}
+
+.rekening-kaart__iban {
+  grid-row: 2;
+  color: var(--kleur-zacht);
+}
+
+.rekening-kaart__saldo {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* Rekeningkop */
+.rekening-kop {
+  border-bottom: 1px solid var(--kleur-lijn);
+  padding-bottom: 0.5rem;
+}
+
+.rekening-kop h1 {
+  margin-bottom: 0.25rem;
+}
+
+.rekening-kop p {
+  margin: 0.125rem 0;
+}
+
+.rekening-kop__iban {
+  color: var(--kleur-zacht);
+}
+
+.rekening-kop__saldo {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.rekening-kop__rente {
+  color: var(--kleur-zacht);
+}
+
+/* Transactielijst */
+.jaarregel {
+  margin: 1.5rem 0 0.25rem;
+  padding: 0.25rem 0;
+  border-bottom: 2px solid var(--kleur-tekst);
+  font-weight: 700;
+  text-align: center;
+}
+
+.datumregel {
+  margin: 1rem 0 0;
+  padding: 0.375rem 0.5rem;
+  background: var(--kleur-vlak);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.transacties {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.transactie {
+  border-bottom: 1px solid var(--kleur-lijn);
+}
+
+.transactie__regel {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 0.5rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.transactie__regel:hover,
+.transactie--open .transactie__regel {
+  background: var(--kleur-vlak);
+}
+
+.transactie__naam {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0.5rem 0.5rem 1rem;
+  font-size: 0.9375rem;
+}
+
+.details dt {
+  color: var(--kleur-zacht);
+}
+
+.details dd {
+  margin: 0;
+}
+
+.toon-meer {
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.leeg,
+.laden {
+  color: var(--kleur-zacht);
+  text-align: center;
+}
+
+/* Formulieren */
+.formulier,
+.zoeken {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.zoeken {
+  grid-template-columns: repeat(2, 1fr);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--kleur-lijn);
+  border-radius: var(--radius);
+}
+
+.zoeken .veld--breed,
+.zoeken .knoppen,
+.zoeken .melding {
+  grid-column: 1 / -1;
+}
+
+.veld {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.veld > span,
+.veld > label,
+.veld legend {
+  font-weight: 600;
+}
+
+.veld input,
+.veld select {
+  min-height: 2.5rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--kleur-lijn);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.veld input:focus,
+.veld select:focus {
+  outline: 2px solid var(--kleur-primair);
+  outline-offset: 1px;
+}
+
+.veld__fout {
+  color: var(--kleur-af);
+}
+
+.veld__waarschuwing,
+.teller,
+.hint {
+  color: var(--kleur-zacht);
+}
+
+.teller {
+  align-self: flex-end;
+  font-size: 0.8125rem;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+  font-weight: normal;
+}
+
+.veld > .radio {
+  font-weight: normal;
+}
+
+.veld .radio input {
+  min-height: auto;
+  margin: 0;
+}
+
+.van {
+  margin-bottom: 1rem;
+}
+
+.suggesties {
+  list-style: none;
+  margin: -0.5rem 0 0;
+  padding: 0;
+  border: 1px solid var(--kleur-lijn);
+  border-radius: var(--radius);
+}
+
+.suggesties button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--kleur-lijn);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggesties button span {
+  color: var(--kleur-zacht);
+}
+
+.suggesties button:hover {
+  background: var(--kleur-vlak);
+}
+
+.van h2 {
+  margin-top: 0.5rem;
+}
+
+.van p {
+  margin: 0.125rem 0;
+}
+
+.wissel {
+  text-align: center;
+}
+
+/* Admin */
+.kaart {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--kleur-lijn);
+  border-radius: var(--radius);
+}
+
+.kaart h2 {
+  margin-top: 0;
+}
+
+.rij {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.rij--tussen {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tabel {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.tabel th,
+.tabel td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--kleur-lijn);
+  text-align: left;
+}
+
+.tabel .getal {
+  text-align: right;
+}
+
+.visueel-verborgen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 560px) {
+  .zoeken {
+    grid-template-columns: 1fr;
+  }
+
+  .tabel th:nth-child(2),
+  .tabel td:nth-child(2) {
+    display: none;
+  }
+}

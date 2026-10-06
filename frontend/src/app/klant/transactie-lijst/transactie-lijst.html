@@ -1,0 +1,59 @@
+@for (dag of dagen(); track dag.datum) {
+  @if (dag.nieuwJaar) {
+    <div class="jaarregel" role="separator">{{ dag.nieuwJaar }}</div>
+  }
+  <h3 class="datumregel">{{ datumregel(dag.datum) }}</h3>
+  <ul class="transacties">
+    @for (t of dag.transacties; track t.id) {
+      <li class="transactie" [class.transactie--open]="open().has(t.id)">
+        <button type="button" class="transactie__regel" [attr.aria-expanded]="open().has(t.id)"
+                [attr.aria-controls]="'details-' + t.id" (click)="wissel(t.id)">
+          <span class="transactie__naam">{{ soort() === Soort.SPAAR ? (t.omschrijving || t.tegenNaam) : t.tegenNaam }}</span>
+          <span class="bedrag" [class.bedrag--af]="t.bedrag.startsWith('-')" [class.bedrag--bij]="!t.bedrag.startsWith('-')">
+            {{ t.bedrag | bedrag: 'teken' }}
+          </span>
+        </button>
+        @if (open().has(t.id)) {
+          <dl class="details" [id]="'details-' + t.id">
+            @if (soort() === Soort.SPAAR) {
+              <dt>Datum</dt><dd>{{ datum(t.datum) }}</dd>
+              <dt>Tegenrekening</dt>
+              <dd>{{ t.tegenNaam }}@if (t.tegenIban) {<br />{{ ibanTekst(t.tegenIban) }}}</dd>
+              <dt>Type</dt><dd>{{ t.typeLabel }}</dd>
+            } @else {
+              <dt>Naam rekeninghouder</dt><dd>{{ t.rekeninghouder }}</dd>
+              <dt>Transactietype</dt><dd>{{ t.typeLabel }}</dd>
+              <dt>Van</dt>
+              <dd>{{ t.van.naam }}@if (t.van.iban) {<br />{{ ibanTekst(t.van.iban) }}}</dd>
+              <dt>Naar</dt>
+              <dd>{{ t.naar.naam }}@if (t.naar.iban) {<br />{{ ibanTekst(t.naar.iban) }}}</dd>
+              <dt>Datum transactie</dt><dd>{{ datumTijd(t.tijdstip) }}</dd>
+              <dt>Uitgevoerd op</dt><dd>{{ datum(t.uitgevoerdOp) }}</dd>
+            }
+            @if (t.omschrijving) {
+              <dt>Omschrijving</dt><dd>{{ t.omschrijving }}</dd>
+            }
+            @if (t.betalingskenmerk) {
+              <dt>Betalingskenmerk</dt><dd>{{ t.betalingskenmerk }}</dd>
+            }
+            @if (t.extraOmschrijving) {
+              <dt>Extra omschrijving</dt><dd>{{ t.extraOmschrijving }}</dd>
+            }
+          </dl>
+        }
+      </li>
+    }
+  </ul>
+}
+
+@if (geladen() && transacties().length === 0) {
+  <p class="leeg">{{ criteria() ? 'Geen transacties gevonden.' : 'Nog geen af- of bijschrijvingen.' }}</p>
+}
+
+<app-fout-melding [fout]="fout()" (opnieuw)="opnieuw()" />
+
+@if (laden()) {
+  <p class="laden" aria-live="polite">Laden…</p>
+} @else if (volgende()) {
+  <div class="toon-meer"><button type="button" class="knop knop--secundair" (click)="toonMeer()">Toon meer</button></div>
+}

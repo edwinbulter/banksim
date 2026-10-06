@@ -79,17 +79,29 @@ class TransactieController implements TransactiesApi {
 
     static TransactieDto transactie(Rekening rekening, TransactieRij rij) {
         TransactieType type = weergaveType(rekening.soort(), rij.type());
+        String tegenNaam = tegenNaam(rekening.soort(), rij);
         PartijDto eigen = new PartijDto(rekening.houderNaam()).iban(rekening.iban().value());
-        PartijDto tegen = new PartijDto(rij.tegenNaam()).iban(rij.tegenIban());
+        PartijDto tegen = new PartijDto(tegenNaam).iban(rij.tegenIban());
         boolean af = rij.bedrag().isNegative();
         var dto = new TransactieDto(rij.id(), rij.boekdatum(), rij.tijdstip().atOffset(ZoneOffset.UTC), rij.uitvoerDatum(),
-                rij.tegenNaam(), rij.bedrag().toString(), TransactieTypeDto.valueOf(type.name()), type.label(),
+                tegenNaam, rij.bedrag().toString(), TransactieTypeDto.valueOf(type.name()), type.label(),
                 rekening.houderNaam(), af ? eigen : tegen, af ? tegen : eigen);
         dto.setTegenIban(rij.tegenIban());
         dto.setOmschrijving(rij.omschrijving());
         dto.setBetalingskenmerk(rij.betalingskenmerk());
         dto.setExtraOmschrijving(rij.extraOmschrijving());
         return dto;
+    }
+
+    /**
+     * Bij inleg en opname is de tegenpartij de eigen andere rekening; zonder soort zou er alleen de eigen naam staan
+     * (FO: "Spaarrekening J. de Vries").
+     */
+    static String tegenNaam(RekeningSoort soort, TransactieRij rij) {
+        if (rij.type() != TransactieType.INLEG && rij.type() != TransactieType.OPNAME) {
+            return rij.tegenNaam();
+        }
+        return (soort == RekeningSoort.BETAAL ? "Spaarrekening " : "Betaalrekening ") + rij.tegenNaam();
     }
 
     /** Inleg en opname zijn op de betaalrekening een gewone overschrijving (TO §6). */

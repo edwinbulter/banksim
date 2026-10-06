@@ -9,7 +9,7 @@ import { Component, ElementRef, viewChild } from '@angular/core';
   template: `
     <form #formulier method="post" action="/logout" (submit)="vulCsrfToken()">
       <input type="hidden" name="_csrf" />
-      <button type="submit">Uitloggen</button>
+      <button type="submit" class="knop knop--secundair">Uitloggen</button>
     </form>
   `,
 })

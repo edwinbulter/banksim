@@ -1,0 +1,32 @@
+<app-fout-melding [fout]="fout()" (opnieuw)="laad()" />
+
+@if (overzicht(); as o) {
+  @if (id()) {
+    <p class="terug"><a routerLink="/admin">‹ Terug naar rekeninghouders</a></p>
+    <div class="melding melding--info">Je bekijkt de rekeningen van {{ o.rekeninghouder }} (alleen lezen).</div>
+  } @else {
+    <h1>Welkom, {{ o.rekeninghouder }}</h1>
+  }
+
+  <section aria-labelledby="betaal-titel">
+    <h2 id="betaal-titel">Betaalrekeningen</h2>
+    @for (r of betaal(); track r.iban) {
+      <a class="rekening-kaart" [routerLink]="['/betaalrekening', r.iban]">
+        <span class="rekening-kaart__soort">Betaalrekening</span>
+        <span class="rekening-kaart__iban">{{ iban(r.iban) }}</span>
+        <span class="rekening-kaart__saldo bedrag">{{ r.saldo | bedrag: 'valuta' }}</span>
+      </a>
+    }
+  </section>
+
+  <section aria-labelledby="spaar-titel">
+    <h2 id="spaar-titel">Spaarrekeningen</h2>
+    @for (r of spaar(); track r.iban) {
+      <a class="rekening-kaart" [routerLink]="['/spaarrekening', r.iban]">
+        <span class="rekening-kaart__soort">Spaarrekening (3% rente)</span>
+        <span class="rekening-kaart__iban">{{ iban(r.iban) }}</span>
+        <span class="rekening-kaart__saldo bedrag">{{ r.saldo | bedrag: 'valuta' }}</span>
+      </a>
+    }
+  </section>
+}

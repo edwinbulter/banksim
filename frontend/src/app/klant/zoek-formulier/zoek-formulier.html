@@ -1,0 +1,36 @@
+<form class="zoeken" [formGroup]="formulier" (ngSubmit)="zoeken()" aria-label="Zoeken in transacties">
+  <label class="veld veld--breed">
+    <span>Naam, bedrag, IBAN of omschrijving</span>
+    <input type="search" formControlName="tekst" maxlength="140" />
+  </label>
+  <label class="veld">
+    <span>Bedrag van (€)</span>
+    <input type="text" inputmode="decimal" formControlName="min" maxlength="17" />
+  </label>
+  <label class="veld">
+    <span>Bedrag t/m (€)</span>
+    <input type="text" inputmode="decimal" formControlName="max" maxlength="17" />
+  </label>
+  <label class="veld">
+    <span>Transactietype</span>
+    <select formControlName="type">
+      <option value="">Alle transactietypes</option>
+      @for (t of typen; track t.waarde) {
+        <option [value]="t.waarde">{{ t.label }}</option>
+      }
+    </select>
+  </label>
+  <fieldset class="veld veld--breed">
+    <legend>Filteren op:</legend>
+    <label class="radio"><input type="radio" formControlName="richting" value="ALL" /> Alle transacties</label>
+    <label class="radio"><input type="radio" formControlName="richting" value="OUT" /> Uitgaande transacties</label>
+    <label class="radio"><input type="radio" formControlName="richting" value="IN" /> Inkomende transacties</label>
+  </fieldset>
+  @if (melding) {
+    <p class="melding melding--fout" role="alert">{{ melding }}</p>
+  }
+  <div class="knoppen">
+    <button type="button" class="knop knop--secundair" (click)="wissen()">Wissen</button>
+    <button type="submit" class="knop">Zoeken</button>
+  </div>
+</form>

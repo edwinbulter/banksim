@@ -23,19 +23,26 @@ describe('SessionService', () => {
 
   afterEach(() => http.verify());
 
-  it('zet de ingelogde gebruiker', async () => {
+  it('zet de ingelogde gebruiker en herkent de beheerder', async () => {
     const laden = service.laad();
-    http.expectOne('/api/me').flush({ naam: 'Jan de Vries', gebruikersnaam: 'jdevries', rollen: ['klant'] });
+    http.expectOne('/api/me').flush({ naam: 'BankSim Beheerder', gebruikersnaam: 'beheerder', rollen: ['admin'] });
     await laden;
-    expect(service.gebruiker()?.naam).toBe('Jan de Vries');
-    expect(navigaties).toEqual([]);
+    expect(service.gebruiker()?.naam).toBe('BankSim Beheerder');
+    expect(service.isAdmin()).toBe(true);
+  });
+
+  it('laadt maar één keer', async () => {
+    const a = service.laad();
+    const b = service.laad();
+    http.expectOne('/api/me').flush({ naam: 'Jan', gebruikersnaam: 'jdevries', rollen: ['klant'] });
+    expect(await a).toEqual(await b);
+    expect(service.isAdmin()).toBe(false);
   });
 
   it('stuurt naar de login bij 401', async () => {
     const laden = service.laad();
     http.expectOne('/api/me').flush(null, { status: 401, statusText: 'Unauthorized' });
-    await laden;
-    expect(service.gebruiker()).toBeNull();
+    expect(await laden).toBeNull();
     expect(navigaties).toEqual([LOGIN_URL]);
   });
 
