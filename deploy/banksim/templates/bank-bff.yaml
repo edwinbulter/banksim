@@ -50,6 +50,15 @@ spec:
               value: postgres.{{ .Release.Namespace }}.svc
             - name: LOGGING_STRUCTURED_FORMAT_CONSOLE
               value: ecs
+            - name: BANKSIM_BFF_LIMIET_LOGINPERMINUUT
+              value: {{ .Values.limiet.loginPerMinuut | quote }}
+            - name: BANKSIM_BFF_LIMIET_BOEKINGENPERMINUUT
+              value: {{ .Values.limiet.boekingenPerMinuut | quote }}
+            - name: BANKSIM_SESSIE_SLEUTEL
+              valueFrom:
+                secretKeyRef:
+                  name: banksim-bff
+                  key: sessie-sleutel
             - name: BANKSIM_BFF_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:

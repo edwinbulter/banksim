@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2Authorization
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 @Configuration
@@ -44,20 +45,25 @@ class SecurityConfig {
 
         http
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/oauth2/**", "/login/**").permitAll()
+                        .requestMatchers("/oauth2/**", "/login/**", "/bff/fallback/**").permitAll()
                         .requestMatchers("/api/**", "/logout").authenticated()
                         .anyRequest().denyAll())
                 .oauth2Login(login -> login
                         .loginPage(LOGIN_PATH)
                         .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(authorizationRequestResolver))
-                        .defaultSuccessUrl(properties.publicUrl() + "/", true))
+                        .userInfoEndpoint(userInfo -> userInfo.userAuthoritiesMapper(new Rollen()))
+                        .successHandler(new StartpaginaNaLogin(properties.publicUrl().toString())))
                 // De Angular-app krijgt 401 en stuurt de browser zelf naar de login.
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
                         PathPatternRequestMatcher.pathPattern("/api/**")))
                 .logout(logout -> logout.logoutSuccessHandler(logoutSuccessHandler))
                 // XSRF-TOKEN-cookie + X-XSRF-TOKEN-header, zoals Angular HttpClient standaard doet.
-                .csrf(csrf -> csrf.spa());
+                .csrf(csrf -> csrf.spa())
+                // De BFF levert alleen JSON en redirects; de pagina's komen van bank-web (TO §10.4).
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+                        .referrerPolicy(referrer -> referrer.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER)));
         return http.build();
     }
 }

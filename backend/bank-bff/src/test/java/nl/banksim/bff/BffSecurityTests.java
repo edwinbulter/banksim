@@ -6,38 +6,28 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oidcLogin;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest(properties = {
-        "banksim.mtls.enabled=false",
-        "server.ssl.enabled=false",
-        "spring.ssl.bundle.pem.server.keystore.certificate=",
-        "spring.ssl.bundle.pem.server.keystore.private-key=",
-        "spring.ssl.bundle.pem.server.truststore.certificate=",
-        "spring.session.jdbc.table-name=SPRING_SESSION",
-        "spring.session.jdbc.initialize-schema=always",
-        "banksim.bff.keycloak.client-secret=test-secret"
-})
+@SpringBootTest
 @AutoConfigureMockMvc
-@Testcontainers
 class BffSecurityTests {
 
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine");
+    @DynamicPropertySource
+    static void database(DynamicPropertyRegistry registry) {
+        BffTest.registreer(registry);
+    }
 
     @Autowired
     MockMvc mvc;
@@ -79,6 +69,14 @@ class BffSecurityTests {
                 .andReturn();
         assertThat(result.getResponse().getRedirectedUrl())
                 .startsWith("https://auth.localtest.me/realms/banksim/protocol/openid-connect/logout");
+    }
+
+    @Test
+    void securityHeadersOpAntwoorden() throws Exception {
+        mvc.perform(get("/api/me"))
+                .andExpect(header().string("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
     }
 
     @Test

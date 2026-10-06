@@ -125,6 +125,7 @@ create_random_secrets() {
   ensure_secret_keys banksim-keycloak admin-password bff-client-secret datagen-client-secret \
     klant-password beheerder-password
   ensure_secret_keys banksim-api cursor-sleutel
+  ensure_secret_keys banksim-bff sessie-sleutel
   ok "Secrets aanwezig (bestaande waarden blijven ongewijzigd)"
 }
 
@@ -226,7 +227,7 @@ main() {
   local tag
   if [[ "$skip_build" == true ]]; then
     tag="$(helm --kube-context "$KUBE_CONTEXT" -n "$NAMESPACE" get values "$RELEASE" -o json 2>/dev/null \
-      | sed -n 's/.*"imageTag":"\([^"]*\)".*/\1/p')"
+      | sed -n 's/.*"imageTag":"\([^"]*\)".*/\1/p' || true)"
     [[ -n "$tag" ]] || fail "--skip-build vereist een bestaande installatie"
   else
     tag="$(image_tag)"

@@ -24,6 +24,11 @@ network:
   # Bronnen van kubelet-probes (node-IP), gezet door install.sh.
   probeSources: []
 
+# Rate limiting in de BFF (per minuut): inlogpogingen per IP-adres, boekingen per gebruiker.
+limiet:
+  loginPerMinuut: 10
+  boekingenPerMinuut: 20
+
 replicas:
   api: 2
   bff: 2

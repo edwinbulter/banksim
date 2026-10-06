@@ -37,6 +37,8 @@
         <archunit.version>1.5.1</archunit.version>
         <jqwik.version>1.10.1</jqwik.version>
         <testcontainers-keycloak.version>4.4.0</testcontainers-keycloak.version>
+        <bucket4j.version>8.21.0</bucket4j.version>
+        <wiremock.version>3.13.2</wiremock.version>
 
         <jib-maven-plugin.version>3.5.2</jib-maven-plugin.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
@@ -88,6 +90,16 @@
                 <groupId>net.jqwik</groupId>
                 <artifactId>jqwik</artifactId>
                 <version>${jqwik.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.bucket4j</groupId>
+                <artifactId>bucket4j_jdk17-postgresql</artifactId>
+                <version>${bucket4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wiremock</groupId>
+                <artifactId>wiremock-standalone</artifactId>
+                <version>${wiremock.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.github.dasniko</groupId>

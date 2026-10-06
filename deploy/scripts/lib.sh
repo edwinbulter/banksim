@@ -26,7 +26,10 @@ kc() { kubectl --context "$KUBE_CONTEXT" "$@"; }
 kind_cluster_name() { printf '%s' "${KUBE_CONTEXT#kind-}"; }
 
 check_context() {
-  kubectl config get-contexts -o name | grep -qx "$KUBE_CONTEXT" \
+  # Eerst de hele lijst ophalen: met "| grep -q" kan kubectl onder pipefail een SIGPIPE-fout geven.
+  local contexten
+  contexten="$(kubectl config get-contexts -o name)"
+  grep -qx "$KUBE_CONTEXT" <<<"$contexten" \
     || fail "kubectl-context '$KUBE_CONTEXT' bestaat niet (kies een andere met --context)"
   kc get --raw /readyz >/dev/null 2>&1 || fail "Cluster van context '$KUBE_CONTEXT' is niet bereikbaar"
 }

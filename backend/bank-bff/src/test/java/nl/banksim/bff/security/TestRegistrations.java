@@ -17,6 +17,6 @@ public final class TestRegistrations {
                 URI.create("https://bank.localtest.me"),
                 URI.create("https://bank-api.banksim.svc:8443"),
                 new BffProperties.Keycloak(URI.create("https://auth.localtest.me"),
-                        URI.create("https://keycloak.banksim.svc:8443"), "banksim", "bank-bff", "test-secret", null)));
+                        URI.create("https://keycloak.banksim.svc:8443"), "banksim", "bank-bff", "test-secret", null), null, null));
     }
 }

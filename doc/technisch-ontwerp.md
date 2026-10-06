@@ -70,7 +70,7 @@ flowchart LR
 | Component | Verantwoordelijkheid |
 | --- | --- |
 | `bank-web` | Angular-app, statisch geserveerd door nginx (unprivileged). Bevat alle schermen uit het FO. Doet zelf geen authenticatie: vraagt `/api/me` aan de BFF. |
-| `bank-bff` | OIDC Authorization Code + PKCE met Keycloak als confidential client; bewaart tokens server-side in een gedeelde sessie (Spring Session JDBC in PostgreSQL, schema `bff`, token-attributen versleuteld met AES-GCM; expliciet `HttpSessionOAuth2AuthorizedClientRepository`, want de Spring Boot-standaard houdt tokens in het geheugen van één pod), zodat elke replica elke request kan afhandelen; zet HttpOnly/Secure/SameSite=Strict-cookie en CSRF-token; stuurt `/api/**` door naar `bank-api` met het access token (`TokenRelay`); rate limiting; na login redirect naar `/` (klant) of `/admin` (admin). |
+| `bank-bff` | OIDC Authorization Code + PKCE met Keycloak als confidential client; bewaart tokens server-side in een gedeelde sessie (Spring Session JDBC in PostgreSQL, schema `bff`; alle sessie-attributen, dus ook access-, refresh- en ID-token, versleuteld met AES-256-GCM via de ConversionService van Spring Session; expliciet `HttpSessionOAuth2AuthorizedClientRepository`, want de Spring Boot-standaard houdt tokens in het geheugen van één pod), zodat elke replica elke request kan afhandelen; zet HttpOnly/Secure/SameSite=Strict-cookie en CSRF-token; stuurt `/api/**` door naar `bank-api` met het access token (`TokenRelay`) en zonder cookies en CSRF-token; rate limiting (Bucket4j, buckets in `bff.bucket`, login vóór en boekingen ná Spring Security); na login redirect naar `/` (klant) of `/admin` (op basis van de realmrollen die een mapper in het ID-token zet; admin). |
 | `bank-api` | Alle businesslogica en autorisatie. OAuth2 Resource Server: valideert elk JWT zelf (signatuur, issuer, audience `bank-api`, expiry). |
 | Keycloak | Gebruikers, wachtwoorden, rollen `klant` en `admin`, brute-force-detectie, optioneel TOTP. Officiële image als Deployment (1 replica), database `keycloak` in dezelfde PostgreSQL. |
 | PostgreSQL | Grootboek, contacten, instellingen, audit log, BFF-sessies en de Keycloak-database. Officiële image als StatefulSet (1 instance) met PVC op storage class `standard`. |
@@ -432,9 +432,9 @@ De backend moet blijven werken, of netjes en veilig falen, als het netwerk, de d
 | Afhankelijkheid | Maatregel | Gedrag bij uitval |
 | --- | --- | --- |
 | PostgreSQL | HikariCP `connectionTimeout` 3 s, `validationTimeout` 1 s; `statement_timeout` 5 s; transactie-timeout 5 s; pool als bulkhead | 503 `ProblemDetail` met `Retry-After`; geen halve boekingen (rollback); pod blijft ready |
-| Keycloak (JWKS) | Sleutels gecachet (Spring Cache, 10 min); ophalen met timeout 2 s en circuit breaker; bij onbekende `kid` één keer verversen | Bestaande tokens blijven valideerbaar; onbekende sleutel → 401 (fail closed) |
-| Keycloak (BFF: login/refresh) | Timeout 3 s, circuit breaker | Nieuwe logins tijdelijk niet mogelijk ("Inloggen is tijdelijk niet mogelijk"); bestaande sessies werken tot het token verloopt |
-| BFF → API | Resilience4j via Spring Cloud CircuitBreaker-filter: timeout 5 s, retry (max 2, exponentiële backoff met jitter) **alleen voor GET**, circuit breaker | Frontend toont foutmelding met "Opnieuw proberen" |
+| Keycloak (JWKS) | Sleutels gecachet door de Nimbus-decoder (5 min); ophalen met timeout 2 s; bij onbekende `kid` één keer verversen | Bestaande tokens blijven valideerbaar; onbekende sleutel → 401 (fail closed) |
+| Keycloak (BFF: login/refresh) | Timeout 3 s; mislukte token-refresh wordt 401 (opnieuw inloggen) of 503 (Keycloak onbereikbaar) | Nieuwe logins tijdelijk niet mogelijk ("Inloggen is tijdelijk niet mogelijk"); bestaande sessies werken tot het token verloopt |
+| BFF → API | Resilience4j via het CircuitBreaker-filter van de gateway (open bij 50% fouten over 20 calls, 10 s open) met fallback naar een 503-ProblemDetail; read-timeout 5 s; retry (max 2, backoff 100–500 ms) **alleen voor GET**; HTTP/1.1 | Frontend toont foutmelding met "Opnieuw proberen" |
 | POST betalen/overschrijven | Geen automatische retry in de BFF; de frontend mag opnieuw proberen met dezelfde `Idempotency-Key` | Nooit dubbel geboekt |
 
 Overig:

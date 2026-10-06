@@ -34,6 +34,8 @@ spring:
 
 server:
   port: 8443
+  # X-Forwarded-* van ingress-nginx (alleen ingress kan de BFF bereiken via mTLS)
+  forward-headers-strategy: native
   shutdown: graceful
   ssl:
     bundle: server
@@ -51,6 +53,29 @@ banksim:
       realm: banksim
       client-id: bank-bff
       client-secret: ${BANKSIM_BFF_CLIENT_SECRET}
+    sessie:
+      # Geheim uit een Secret; daaruit wordt de AES-256-sleutel voor de sessie-attributen afgeleid.
+      sleutel: ${BANKSIM_SESSIE_SLEUTEL}
+      secure-cookie: true
+    limiet:
+      login-per-minuut: 10
+      boekingen-per-minuut: 20
+
+# Circuit breaker voor bank-api (TO §12.2): open na 50% fouten over 20 calls, na 10 s voorzichtig weer proberen.
+resilience4j:
+  circuitbreaker:
+    instances:
+      bank-api:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  timelimiter:
+    instances:
+      bank-api:
+        # Ruimer dan de read-timeout van de HTTP-client (5 s), zodat die eerst afgaat.
+        timeout-duration: 7s
 
 management:
   server:
