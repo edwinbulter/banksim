@@ -2,7 +2,7 @@
 
 BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met ongeveer 5 jaar realistische transactiehistorie. Een admin kan de datum van de simulatie verzetten; alle rekeninghouders zien hun rekeningen dan alsof het die dag is.
 
-> **Status:** fase 1 t/m 6 zijn klaar: alle schermen en API's uit het functioneel ontwerp werken, met inloggen via Keycloak, mTLS, NetworkPolicies, een versleutelde BFF-sessie, rate limiting en vijf jaar fake data. Nog te doen: de Playwright e2e-suite (fase 7) en CI/supply-chain-scans (fase 8).
+> **Status:** fase 1 t/m 7 zijn klaar: alle schermen en API's uit het functioneel ontwerp werken, met inloggen via Keycloak, mTLS, NetworkPolicies, een versleutelde BFF-sessie, rate limiting en vijf jaar fake data, en een Playwright-suite test alle scenario's in Chromium, Firefox en WebKit. Nog te doen: CI en supply-chain-scans (fase 8).
 
 ## Documentatie
 
@@ -97,8 +97,10 @@ Daarna is de applicatie bereikbaar op <https://bank.localtest.me>; Keycloak draa
 
 ```bash
 make test       # backend: unit, integratie (Testcontainers), architectuur, contract en mutation tests
+deploy/scripts/install.sh --e2e   # installeren met een ruimere login-limiet voor de e2e-suite
+make e2e-install                  # eenmalig: Playwright en browsers
 make e2e        # Playwright e2e-tests tegen de installatie in namespace banksim
 deploy/scripts/reset-data.sh   # testdata terugzetten naar de vaste beginstand
 ```
 
-De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).
+De backendtests voorkomen regressie op onder meer geldberekeningen, gelijktijdige overboekingen, toegangscontrole en uitval van database of Keycloak. De Playwright-tests dekken alle scenario's uit het functioneel ontwerp; ze zetten de testdata zelf terug en halen de wachtwoorden uit het Secret. Zie hoofdstuk 13 en 14 van het [technisch ontwerp](doc/technisch-ontwerp.md).

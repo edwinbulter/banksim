@@ -14,6 +14,9 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2Authorization
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
@@ -58,8 +61,12 @@ class SecurityConfig {
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
                         PathPatternRequestMatcher.pathPattern("/api/**")))
                 .logout(logout -> logout.logoutSuccessHandler(logoutSuccessHandler))
-                // XSRF-TOKEN-cookie + X-XSRF-TOKEN-header, zoals Angular HttpClient standaard doet.
-                .csrf(csrf -> csrf.spa())
+                // XSRF-TOKEN-cookie + X-XSRF-TOKEN-header (Angular HttpClient) of _csrf-parameter (uitlogformulier),
+                // beide met het ruwe token. Maskeren tegen BREACH is niet nodig: het token komt nooit in HTML.
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+                .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 // De BFF levert alleen JSON en redirects; de pagina's komen van bank-web (TO §10.4).
                 .headers(headers -> headers
                         .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))

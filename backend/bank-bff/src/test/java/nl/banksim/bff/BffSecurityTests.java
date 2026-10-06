@@ -72,6 +72,14 @@ class BffSecurityTests {
     }
 
     @Test
+    void verkeerdCsrfTokenWordtGeweigerd() throws Exception {
+        mvc.perform(post("/logout").with(oidcLogin())
+                        .cookie(new jakarta.servlet.http.Cookie("XSRF-TOKEN", "echt-token"))
+                        .param("_csrf", "ander-token"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void securityHeadersOpAntwoorden() throws Exception {
         mvc.perform(get("/api/me"))
                 .andExpect(header().string("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"))

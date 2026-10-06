@@ -2,19 +2,22 @@
 # Installeert BankSim in namespace banksim van het kind-cluster single-node (TO §15.2).
 # Idempotent: opnieuw draaien werkt de installatie bij.
 #
-#   install.sh [--context <kubectl-context>] [--skip-build] [--rotate-certs] [--skip-smoke-tests]
+#   install.sh [--context <kubectl-context>] [--skip-build] [--rotate-certs] [--skip-smoke-tests] [--e2e]
+#     --e2e  ruimere login-limiet, zodat de Playwright-suite vaak achter elkaar kan inloggen
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 skip_build=false
 rotate_certs=false
 smoke_tests=true
+extra_helm=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --context) KUBE_CONTEXT="$2"; shift ;;
     --skip-build) skip_build=true ;;
     --rotate-certs) rotate_certs=true ;;
     --skip-smoke-tests) smoke_tests=false ;;
+    --e2e) extra_helm+=(--set limiet.loginPerMinuut=200) ;;
     -h|--help) sed -n '2,6p' "$0"; exit 0 ;;
     *) fail "Onbekende optie: $1" ;;
   esac
@@ -142,6 +145,7 @@ helm_install() {
     --set imageTag="$tag" \
     --set certsChecksum="$(certs_checksum)" \
     --set-json "network.probeSources=[\"$node_ip/32\"]" \
+    ${extra_helm[@]+"${extra_helm[@]}"} \
     --wait --timeout 15m >/dev/null
   ok "Release $RELEASE geïnstalleerd (image-tag $tag)"
 }

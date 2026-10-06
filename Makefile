@@ -31,7 +31,7 @@ e2e-install: ## Playwright en browsers installeren
 	npm --prefix $(E2E) ci
 	npm --prefix $(E2E) run install-browsers
 
-e2e: ## Playwright e2e-tests tegen de installatie in namespace banksim
+e2e: ## Playwright e2e-tests tegen de installatie in namespace banksim (installeer met install.sh --e2e)
 	npm --prefix $(E2E) ci
 	npm --prefix $(E2E) test
 

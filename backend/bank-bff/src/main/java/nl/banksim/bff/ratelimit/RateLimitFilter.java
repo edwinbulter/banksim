@@ -12,6 +12,8 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
+import io.github.bucket4j.TokensInheritanceStrategy;
+import io.github.bucket4j.distributed.BucketProxy;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 
 import org.slf4j.Logger;
@@ -38,11 +40,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final ProxyManager<String> buckets;
     private final Soort soort;
+    private final int perMinuut;
     private final Supplier<BucketConfiguration> configuratie;
 
     public RateLimitFilter(ProxyManager<String> buckets, Soort soort, int perMinuut) {
         this.buckets = buckets;
         this.soort = soort;
+        this.perMinuut = perMinuut;
         this.configuratie = () -> perMinuut(perMinuut);
     }
 
@@ -52,10 +56,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String pad = request.getRequestURI();
         ConsumptionProbe probe = null;
         if (soort == Soort.LOGIN && pad.startsWith("/oauth2/authorization/")) {
-            probe = buckets.getProxy("login:" + clientIp(request), configuratie).tryConsumeAndReturnRemaining(1);
+            probe = bucket("login:" + clientIp(request)).tryConsumeAndReturnRemaining(1);
         } else if (soort == Soort.BOEKINGEN && HttpMethod.POST.matches(request.getMethod())
                 && (pad.equals("/api/payments") || pad.equals("/api/transfers"))) {
-            probe = buckets.getProxy("boeken:" + gebruiker(request), configuratie).tryConsumeAndReturnRemaining(1);
+            probe = bucket("boeken:" + gebruiker(request)).tryConsumeAndReturnRemaining(1);
         }
         if (probe != null && !probe.isConsumed()) {
             long seconden = Math.max(1, TimeUnit.NANOSECONDS.toSeconds(probe.getNanosToWaitForRefill()));
@@ -71,6 +75,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * Een bucket bewaart zijn configuratie in de database. Met de limiet als versie krijgt een bestaande bucket
+     * de nieuwe limiet zodra die in de instellingen verandert, in plaats van de oude te houden tot hij verloopt.
+     */
+    private BucketProxy bucket(String sleutel) {
+        return buckets.builder()
+                .withImplicitConfigurationReplacement(perMinuut, TokensInheritanceStrategy.RESET)
+                .build(sleutel, configuratie);
     }
 
     /** Alleen ingress-nginx kan de BFF bereiken (mTLS), dus X-Forwarded-For is betrouwbaar. */

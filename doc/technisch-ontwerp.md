@@ -70,7 +70,7 @@ flowchart LR
 | Component | Verantwoordelijkheid |
 | --- | --- |
 | `bank-web` | Angular-app, statisch geserveerd door nginx (unprivileged). Bevat alle schermen uit het FO. Doet zelf geen authenticatie: vraagt `/api/me` aan de BFF. |
-| `bank-bff` | OIDC Authorization Code + PKCE met Keycloak als confidential client; bewaart tokens server-side in een gedeelde sessie (Spring Session JDBC in PostgreSQL, schema `bff`; alle sessie-attributen, dus ook access-, refresh- en ID-token, versleuteld met AES-256-GCM via de ConversionService van Spring Session; expliciet `HttpSessionOAuth2AuthorizedClientRepository`, want de Spring Boot-standaard houdt tokens in het geheugen van één pod), zodat elke replica elke request kan afhandelen; zet HttpOnly/Secure/SameSite=Strict-cookie en CSRF-token; stuurt `/api/**` door naar `bank-api` met het access token (`TokenRelay`) en zonder cookies en CSRF-token; rate limiting (Bucket4j, buckets in `bff.bucket`, login vóór en boekingen ná Spring Security); na login redirect naar `/` (klant) of `/admin` (op basis van de realmrollen die een mapper in het ID-token zet; admin). |
+| `bank-bff` | OIDC Authorization Code + PKCE met Keycloak als confidential client; bewaart tokens server-side in een gedeelde sessie (Spring Session JDBC in PostgreSQL, schema `bff`; alle sessie-attributen, dus ook access-, refresh- en ID-token, versleuteld met AES-256-GCM via de ConversionService van Spring Session; expliciet `HttpSessionOAuth2AuthorizedClientRepository`, want de Spring Boot-standaard houdt tokens in het geheugen van één pod), zodat elke replica elke request kan afhandelen; zet HttpOnly/Secure/SameSite=Strict-cookie en CSRF-token; stuurt `/api/**` door naar `bank-api` met het access token (`TokenRelay`) en zonder cookies en CSRF-token; rate limiting (Bucket4j, buckets in `bff.bucket`, login vóór en boekingen ná Spring Security; de limiet is de configuratieversie van een bucket, zodat een gewijzigde limiet ook direct voor bestaande buckets geldt); na login redirect naar `/` (klant) of `/admin` (op basis van de realmrollen die een mapper in het ID-token zet; admin). |
 | `bank-api` | Alle businesslogica en autorisatie. OAuth2 Resource Server: valideert elk JWT zelf (signatuur, issuer, audience `bank-api`, expiry). |
 | Keycloak | Gebruikers, wachtwoorden, rollen `klant` en `admin`, brute-force-detectie, optioneel TOTP. Officiële image als Deployment (1 replica), database `keycloak` in dezelfde PostgreSQL. |
 | PostgreSQL | Grootboek, contacten, instellingen, audit log, BFF-sessies en de Keycloak-database. Officiële image als StatefulSet (1 instance) met PVC op storage class `standard`. |
@@ -345,7 +345,7 @@ Uitgangspunt: geen enkele verbinding wordt vertrouwd omdat hij "van binnen" komt
 | --- | --- |
 | Browser → ingress | Alleen HTTPS via de bestaande ingress-nginx, met een certificaat voor `bank.localtest.me` en `auth.localtest.me` van de BankSim-CA; HSTS; HTTP wordt alleen omgeleid |
 | Ingress → banksim | ingress-nginx praat HTTPS met web, bff en Keycloak, verifieert hun certificaat (`proxy-ssl-verify`) en toont zelf een clientcertificaat (`proxy-ssl-secret`) |
-| Browser → BFF | Sessiecookie `__Host-SESSION` (HttpOnly, Secure, SameSite=Strict, Path=/); CSRF via `XSRF-TOKEN`-cookie + `X-XSRF-TOKEN`-header (Angular `HttpClient` ondersteunt dit standaard); sessie-timeout 15 min inactief, max 8 uur |
+| Browser → BFF | Sessiecookie `__Host-SESSION` (HttpOnly, Secure, SameSite=Strict, Path=/); CSRF via `XSRF-TOKEN`-cookie + `X-XSRF-TOKEN`-header (Angular `HttpClient` ondersteunt dit standaard) of `_csrf`-parameter (uitlogformulier), beide met het ruwe token: het cookie wordt bij elk antwoord gezet en het token komt nooit in HTML, dus maskeren tegen BREACH is niet nodig; sessie-timeout 15 min inactief, max 8 uur |
 | BFF → API | Access token (JWT, 5 min geldig) via `TokenRelay`; API valideert signatuur, `iss`, `aud=bank-api`, `exp`, `nbf` |
 | Pod ↔ pod | mTLS in de applicaties: elke component heeft een eigen certificaat van de BankSim-CA (CN = componentnaam, SAN = service-DNS) en eist een clientcertificaat van die CA. Daarnaast controleert de ontvanger de CN van de aanroeper tegen een allow-list: web en bff accepteren alleen `ingress`, api alleen `bank-bff`, PostgreSQL koppelt de CN aan de databasegebruiker. Toegestane paden: ingress→web, ingress→bff, ingress→keycloak, bff→api, bff→keycloak, bff→postgres (sessies), api→keycloak, api→postgres, keycloak→postgres, migrate/datagen→postgres, datagen→keycloak |
 | Netwerk | Kubernetes `NetworkPolicy` default-deny (ingress en egress) in namespace `banksim`, met allow-regels voor precies de paden hierboven; inkomend verkeer van buiten de namespace alleen vanuit namespace `ingress-nginx`; DNS naar `kube-system`; kubelet-probes vanaf het node-IP op de aparte health-poorten |
@@ -434,7 +434,7 @@ De backend moet blijven werken, of netjes en veilig falen, als het netwerk, de d
 | PostgreSQL | HikariCP `connectionTimeout` 3 s, `validationTimeout` 1 s; `statement_timeout` 5 s; transactie-timeout 5 s; pool als bulkhead | 503 `ProblemDetail` met `Retry-After`; geen halve boekingen (rollback); pod blijft ready |
 | Keycloak (JWKS) | Sleutels gecachet door de Nimbus-decoder (5 min); ophalen met timeout 2 s; bij onbekende `kid` één keer verversen | Bestaande tokens blijven valideerbaar; onbekende sleutel → 401 (fail closed) |
 | Keycloak (BFF: login/refresh) | Timeout 3 s; mislukte token-refresh wordt 401 (opnieuw inloggen) of 503 (Keycloak onbereikbaar) | Nieuwe logins tijdelijk niet mogelijk ("Inloggen is tijdelijk niet mogelijk"); bestaande sessies werken tot het token verloopt |
-| BFF → API | Resilience4j via het CircuitBreaker-filter van de gateway (open bij 50% fouten over 20 calls, 10 s open) met fallback naar een 503-ProblemDetail; read-timeout 5 s; retry (max 2, backoff 100–500 ms) **alleen voor GET**; HTTP/1.1 | Frontend toont foutmelding met "Opnieuw proberen" |
+| BFF → API | Resilience4j via het CircuitBreaker-filter van de gateway (open bij 50% fouten over 20 calls, 10 s open) met fallback naar een 503-ProblemDetail; read-timeout 5 s; retry (max 2, backoff 100–500 ms) **alleen voor GET**; HTTP/1.1 | Frontend toont foutmelding met "Opnieuw proberen"; de route-guards laten de pagina bij een storing gewoon laden (alleen "niet ingelogd" stuurt naar de login), zodat die melding ook bij een directe link verschijnt |
 | POST betalen/overschrijven | Geen automatische retry in de BFF; de frontend mag opnieuw proberen met dezelfde `Idempotency-Key` | Nooit dubbel geboekt |
 
 Overig:
@@ -483,17 +483,19 @@ Alle tests draaien in `mvn verify`; Testcontainers gebruikt de lokale Docker.
 
 ## 14. Playwright e2e-tests
 
-- Map `e2e/`, TypeScript, page objects per FO-scherm (`LoginPage`, `OverzichtPage`, `BetaalrekeningPage`, `BetalenPage`, `SpaarrekeningPage`, `OverschrijvenPage`, `AdminPage`).
-- Twee Playwright-projects voor de klant- en de admin-frontend, elk met een eigen ingelogde `storageState` (aangemaakt in een setup-project dat via het echte Keycloak-inlogscherm inlogt). Browsers: Chromium, Firefox, WebKit.
-- Draait tegen de deployment in kind (`baseURL: https://bank.localtest.me`, lokale CA vertrouwd). Vóór de suite zet `globalSetup` de testdata terug met `deploy/scripts/reset-data.sh` (draait de `bank-datagen` Job opnieuw (vaste seed) en de simulatiedatum op een vaste datum te zetten. Er bestaan geen test-only endpoints in de applicatie.
-- Selectors via `getByRole`/`getByLabel` (dwingt toegankelijke markup af); `data-testid` alleen waar nodig.
-- Bij falen: trace, screenshot en video als artefact.
+- Map `e2e/`, TypeScript. Page objects in `e2e/pages/`: `LoginPagina` (Keycloak), `OverzichtPagina`, `RekeningPagina` (betaal- en spaarrekening: kop, datum- en jaarregels, uitklappen, Toon meer, zoeken), `BetalenPagina` en `AdminPagina`. Specs per onderwerp in `e2e/tests/`.
+- Een setup-project logt via het echte Keycloak-inlogscherm in als klant (`jdevries`) en beheerder en bewaart beide sessies (`e2e/.auth/`, niet in git). De projects `chromium`, `firefox` en `webkit` hangen daarvan af en kiezen per spec de klant- of beheerderssessie. Tests die zelf inloggen (verkeerd wachtwoord, uitloggen, tweede huishouden) gebruiken een verse context; het foute-wachtwoordscenario gebruikt `ljansen`, zodat brute-force-detectie de hoofdgebruiker niet blokkeert.
+- Draait tegen de deployment in kind (`baseURL` uit `BANKSIM_URL`, standaard `https://bank.localtest.me`; de lokale CA wordt genegeerd tenzij `BANKSIM_VERTROUW_CA=true`). `globalSetup` haalt de wachtwoorden uit het Secret `banksim-keycloak` en zet de testdata terug met `deploy/scripts/reset-data.sh --simulatiedatum 2026-10-05` (datagen-Job opnieuw met vaste seed, simulatiedatum via `psql` in `postgres-0`); `BANKSIM_E2E_GEEN_RESET=true` slaat dat over. Er bestaan geen test-only endpoints in de applicatie.
+- Installeer voor de suite met `deploy/scripts/install.sh --e2e`: dat verhoogt de login-limiet van de BFF naar 200 per minuut, want de suite logt vaker in dan de standaardlimiet van 10 toestaat. Tests delen data en draaien daarom na elkaar (1 worker); betalingen gebruiken per browser een eigen bedrag en beweringen zijn relatief (saldo vóór min bedrag).
+- Selectors via `getByRole`/`getByLabel` (dwingt toegankelijke markup af), klassen alleen voor de transactielijst.
+- Bij falen: trace, screenshot en video als artefact (`e2e/test-results/`, HTML-rapport in `e2e/playwright-report/`).
+- De storingstest schaalt `bank-api` in het cluster naar 0 en weer naar 2 en draait alleen in Chromium.
 
 | Scenario | Controle |
 | --- | --- |
 | Inloggen klant | Komt op Overzicht met betaal- en spaarrekening en saldi |
 | Inloggen admin | Komt op Admin scherm |
-| Verkeerd wachtwoord | Foutmelding; na N pogingen geblokkeerd (Keycloak brute force) |
+| Verkeerd wachtwoord | Foutmelding van Keycloak; blijft op het inlogscherm (blokkeren na N pogingen regelt Keycloak brute-force-detectie) |
 | Betaalrekening | Kop toont naam, IBAN, saldo; datumregels; bedragen met teken |
 | Toon meer | Eerst 50 regels, daarna 100; knop verdwijnt aan het eind |
 | Uitklappen | Details: naam, transactietype, Van/Naar met IBAN, "3 oktober 2026 om 13:26", uitgevoerd op; Betaalautomaat zonder Naar-IBAN |
@@ -505,9 +507,9 @@ Alle tests draaien in `mvn verify`; Testcontainers gebruikt de lokale Docker.
 | Inleggen/Opnemen | Overschrijven-scherm met juiste Van/Naar; beide saldi kloppen na afloop |
 | Simulatiedatum | Admin zet datum terug → klant ziet geen latere transacties en saldo van die dag; vooruit → weer zichtbaar |
 | Admin alleen-lezen | Admin ziet transacties van een klant; Betalen/Opnemen/Inleggen niet zichtbaar |
-| Toegangscontrole | Klant op `/admin` → geweigerd; klant opent andermans IBAN-URL → niet gevonden |
+| Toegangscontrole | Klant op `/admin` → terug naar Overzicht, admin-API 403; klant opent andermans IBAN-URL → "Rekening is niet gevonden.", API 404; POST zonder CSRF-token → 403 |
 | Resilience | API geschaald naar 0 → nette foutmelding en "Opnieuw proberen"; na herstel werkt het weer |
-| Uitloggen | Sessie weg; terugknop toont geen gegevens |
+| Uitloggen | Naar Keycloak; opnieuw naar de bank → inlogscherm; `/api/me` → 401 |
 
 ## 15. Deployment op kind
 

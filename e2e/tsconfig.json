@@ -1,12 +1,12 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["playwright.config.ts", "tests/**/*.ts"]
+  "include": ["playwright.config.ts", "tests/**/*.ts", "pages/**/*.ts", "support/**/*.ts"]
 }
