@@ -8,6 +8,7 @@ BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met 
 
 | Document | Inhoud |
 | --- | --- |
+| [Handleiding](doc/banksim-handleiding.md) | Stap voor stap installeren, inloggen als klant of beheerder en alle schermen gebruiken |
 | [Functioneel ontwerp](doc/functioneel-ontwerp.md) | Schermen met schetsen, functionaliteit, validaties, fake data en beantwoorde open punten |
 | [Technisch ontwerp](doc/technisch-ontwerp.md) | Architectuur, API, datamodel, security, OWASP Top 10:2025, resilience, teststrategie en deployment |
 
@@ -90,6 +91,8 @@ deploy/scripts/trust-ca.sh          # optioneel: BankSim-CA vertrouwen in de mac
 deploy/scripts/uninstall.sh         # namespace banksim met alle data verwijderen
 deploy/scripts/uninstall.sh --purge # ook de images en de lokale CA verwijderen
 ```
+
+Stap voor stap, met schermafbeeldingen: zie de [handleiding](doc/banksim-handleiding.md).
 
 De scripts werken alleen op de kubectl-context `kind-single-node`, tenzij je met `--context` een andere kiest. `install.sh` kun je veilig opnieuw draaien. `make install` en `make uninstall` roepen dezelfde scripts aan.
 
