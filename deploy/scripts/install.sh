@@ -140,17 +140,31 @@ certs_checksum() {
 }
 
 helm_install() {
-  local tag="$1" node_ip
+  local tag="$1" node_ip poging fout
   node_ip="$(kc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
   info "Helm-release $RELEASE installeren (kan enkele minuten duren)"
-  helm --kube-context "$KUBE_CONTEXT" upgrade --install "$RELEASE" "$REPO_ROOT/deploy/banksim" \
-    --namespace "$NAMESPACE" \
-    --set imageTag="$tag" \
-    --set certsChecksum="$(certs_checksum)" \
-    --set-json "network.probeSources=[\"$node_ip/32\"]" \
-    ${extra_helm[@]+"${extra_helm[@]}"} \
-    --wait --timeout 15m >/dev/null
-  ok "Release $RELEASE geïnstalleerd (image-tag $tag)"
+  # ingress-nginx herschrijft bij elke Ingress-wijziging de PEM-bestanden van proxy-ssl-secret niet atomair; valideert
+  # de admission webhook tegelijk de volgende Ingress, dan leest nginx -t een half bestand en weigert hij die. Alleen
+  # bij die fout opnieuw proberen; upgrade --install is idempotent en de hooks draaien ook bij post-upgrade.
+  for poging in 1 2 3; do
+    if fout="$(helm --kube-context "$KUBE_CONTEXT" upgrade --install "$RELEASE" "$REPO_ROOT/deploy/banksim" \
+      --namespace "$NAMESPACE" \
+      --set imageTag="$tag" \
+      --set certsChecksum="$(certs_checksum)" \
+      --set-json "network.probeSources=[\"$node_ip/32\"]" \
+      ${extra_helm[@]+"${extra_helm[@]}"} \
+      --wait --timeout 15m 2>&1 >/dev/null)"; then
+      ok "Release $RELEASE geïnstalleerd (image-tag $tag)"
+      return 0
+    fi
+    if [[ $poging -lt 3 && "$fout" == *validate.nginx.ingress.kubernetes.io* && "$fout" == */etc/ingress-controller/ssl/* ]]; then
+      warn "ingress-nginx las een half geschreven certificaat (poging $poging); opnieuw over 5 s"
+      sleep 5
+      continue
+    fi
+    printf '%s\n' "$fout" >&2
+    fail "Helm-release $RELEASE installeren mislukt"
+  done
 }
 
 expect_status() {
