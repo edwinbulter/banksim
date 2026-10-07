@@ -176,6 +176,8 @@ jobs:
       - name: Trivy-scan van de images
         run: scripts/scan-images.sh "$(git rev-parse --short HEAD)"
       - name: Playwright-browsers
+        # Normaal ~1 min, met trage Ubuntu-spiegels ~11 min; een hangende apt-get mag niet de hele job opmaken.
+        timeout-minutes: 20
         run: |
           npm --prefix e2e ci
           npm --prefix e2e run install-browsers
