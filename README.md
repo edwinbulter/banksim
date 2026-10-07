@@ -11,6 +11,7 @@ BankSim is een simulatie van internetbankieren voor 10 fictieve huishoudens met 
 | [Handleiding](doc/banksim-handleiding.md) | Stap voor stap installeren, inloggen als klant of beheerder en alle schermen gebruiken |
 | [Functioneel ontwerp](doc/functioneel-ontwerp.md) | Schermen met schetsen, functionaliteit, validaties, fake data en beantwoorde open punten |
 | [Technisch ontwerp](doc/technisch-ontwerp.md) | Architectuur, API, datamodel, security, OWASP Top 10:2025, resilience, teststrategie en deployment |
+| [DORA-validatie](doc/dora-validatie.md) | Gap-analyse tegen DORA (EU 2022/2554) en de RTS ICT-risicobeheer, met bewijs per eis en aanbevelingen |
 
 ## Functionaliteit
 
