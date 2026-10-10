@@ -199,6 +199,17 @@ erDiagram
     }
 ```
 
+Legenda (crow's foot-notatie): elk uiteinde van een lijn zegt hoeveel rijen van de tabel aan díe kant bij één rij aan de andere kant horen.
+
+| Symbool aan uiteinde | Mermaid | Betekenis |
+| --- | --- | --- |
+| twee streepjes | `\|\|` | precies één (1) |
+| cirkel + streepje | `o\|` / `\|o` | nul of één (0..1) |
+| streepje + kraaienpoot | `}\|` / `\|{` | één of meer (1..n) |
+| cirkel + kraaienpoot | `}o` / `o{` | nul of meer (0..n) |
+
+Voorbeelden: een rekeninghouder bezit nul of meer rekeningen en elke rekening hoort bij precies één rekeninghouder; een overboeking heeft één of meer boekingen (de constraint-trigger hieronder dwingt af dat het er precies 2 zijn). Een doorgetrokken lijn is een identificerende relatie, een gestippelde lijn een niet-identificerende; in dit model zijn alle lijnen doorgetrokken. `PK` = primaire sleutel, `FK` = vreemde sleutel.
+
 Overige tabellen:
 
 | Tabel | Doel |
